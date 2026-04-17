@@ -1,0 +1,15 @@
+[package]
+name = "kratos-node"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Node bridge surface for Kratos."
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+kratos-core = { path = "../kratos-core" }
