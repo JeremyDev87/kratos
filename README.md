@@ -1,5 +1,7 @@
 # Kratos
 
+[![CI](https://github.com/JeremyDev87/kratos/actions/workflows/ci.yml/badge.svg)](https://github.com/JeremyDev87/kratos/actions/workflows/ci.yml)
+
 한국어 | [English](README.en.md) | [中文](README.zh-CN.md) | [Español](README.es.md) | [日本語](README.ja.md)
 
 Destroy dead code ruthlessly.
@@ -116,6 +118,28 @@ Saved report: /.../fixtures/demo-app/.kratos/latest-report.json
 - 오래된 React / Next.js 프로젝트
 - 기능 출시가 많아 코드가 누적된 팀
 - 리팩터링 타이밍을 찾는 팀
+
+## 릴리스
+
+Kratos는 `v0.1.0` 같은 시맨틱 버전 태그 기준으로 릴리스합니다.
+
+```bash
+npm version 0.1.0 --no-git-tag-version
+git add package*.json
+git commit -m "chore: release v0.1.0"
+git tag v0.1.0
+git push origin HEAD
+git push origin v0.1.0
+```
+
+태그가 푸시되면 [Release workflow](.github/workflows/release.yml)가 아래를 수행합니다.
+
+- `npm run verify` 실행
+- npm 배포용 tarball 생성
+- stable 릴리스는 npm `latest`, prerelease는 npm `next`로 publish 수행
+- GitHub Release 생성 및 tarball 첨부
+
+권장 방식은 npm Trusted Publishing(OIDC)입니다. 아직 설정하지 않았다면 저장소 `NPM_TOKEN` secret으로도 fallback 배포가 가능합니다.
 
 ## 오픈소스
 
