@@ -9,6 +9,11 @@ import { analyzeProject } from "../src/lib/analyze.js";
 import { loadProjectConfig } from "../src/lib/config.js";
 import { isWithinDirectory } from "../src/lib/fs.js";
 import { parseModuleSource } from "../src/lib/parser.js";
+import {
+  classifyNpmLookupError,
+  classifyNpmPublishError,
+  resolveReleasePlan,
+} from "../src/lib/release.js";
 import { resolveImportTarget } from "../src/lib/resolve.js";
 
 test("isWithinDirectory rejects prefix-only path matches", () => {
@@ -243,6 +248,50 @@ test("require destructuring with ternary defaults does not misparse alias separa
 
   const report = await analyzeProject(tempRoot);
   assert.equal(report.findings.deadExports.some((entry) => entry.file.endsWith("/src/helper.js")), false);
+});
+
+test("release plan marks prerelease tags as next channel", () => {
+  assert.deepEqual(resolveReleasePlan("v1.2.3-beta.1"), {
+    tag: "v1.2.3-beta.1",
+    version: "1.2.3-beta.1",
+    isPrerelease: true,
+    npmDistTag: "next",
+    githubReleaseType: "prerelease",
+  });
+});
+
+test("release plan marks stable tags as latest channel", () => {
+  assert.deepEqual(resolveReleasePlan("v1.2.3"), {
+    tag: "v1.2.3",
+    version: "1.2.3",
+    isPrerelease: false,
+    npmDistTag: "latest",
+    githubReleaseType: "release",
+  });
+});
+
+test("npm lookup error classifier recognizes not found responses", () => {
+  assert.equal(
+    classifyNpmLookupError("npm ERR! code E404\nnpm ERR! 404 Not Found - GET https://registry.npmjs.org/kratos"),
+    "not-found",
+  );
+  assert.equal(
+    classifyNpmLookupError("npm ERR! code EAI_AGAIN\nnpm ERR! request to registry failed"),
+    "unknown",
+  );
+});
+
+test("npm publish error classifier recognizes already published versions", () => {
+  assert.equal(
+    classifyNpmPublishError(
+      "npm ERR! code E403\nnpm ERR! 403 403 Forbidden - PUT https://registry.npmjs.org/kratos - You cannot publish over the previously published versions: 1.2.3.",
+    ),
+    "already-published",
+  );
+  assert.equal(
+    classifyNpmPublishError("npm ERR! code EAI_AGAIN\nnpm ERR! request to registry failed"),
+    "unknown",
+  );
 });
 
 async function fileExists(filePath) {
