@@ -1,0 +1,24 @@
+Kratos report.
+
+Root: <ROOT>
+Files scanned: 5
+Entrypoints: 1
+Broken imports: 1
+Orphan files: 2
+Dead exports: 3
+Unused imports: 0
+Deletion candidates: 2
+
+Saved report: <REPORT>
+
+Broken imports:
+- <ROOT>/src/lib/broken.ts -> ./missing-helper
+
+Orphan files:
+- <ROOT>/src/components/DeadWidget.tsx
+- <ROOT>/src/lib/broken.ts
+
+Dead exports:
+- <ROOT>/src/components/DeadWidget.tsx#DeadWidget
+- <ROOT>/src/lib/broken.ts#brokenFeature
+- <ROOT>/src/lib/math.ts#multiply

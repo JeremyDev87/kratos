@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedBy": "node ./scripts/capture-parity-fixtures.mjs",
+  "fixtures": [
+    {
+      "id": "demo-app",
+      "sourceRoot": "fixtures/demo-app",
+      "outputs": {
+        "report": "fixtures/parity/demo-app/latest-report.v1.json",
+        "summary": "fixtures/parity/demo-app/report-summary.txt",
+        "markdown": "fixtures/parity/demo-app/report-markdown.md"
+      }
+    }
+  ]
+}
