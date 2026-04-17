@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing git tag to release, for example v0.1.0
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Publish Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NPM_CONFIG_CACHE: .npm-cache
+
+    steps:
+      - name: Checkout workflow files
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${{ github.ref_name }}"
+          else
+            tag="${{ inputs.tag }}"
+          fi
+
+          node ./scripts/release-plan.mjs "$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tagged release ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.meta.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-package-lock
+          fi
+
+      - name: Verify package version matches tag
+        shell: bash
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          if [ "v$package_version" != "${{ steps.meta.outputs.tag }}" ]; then
+            echo "Tag ${{ steps.meta.outputs.tag }} does not match package.json version v$package_version"
+            exit 1
+          fi
+
+      - name: Check whether this version already exists on npm
+        id: npm_state
+        shell: bash
+        run: |
+          package_name=$(node -p "require('./package.json').name")
+          if npm view "${package_name}@${{ steps.meta.outputs.version }}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            lookup_state=$(node ./scripts/classify-npm-lookup-error.mjs /tmp/npm-view-error.txt)
+
+            if [ "$lookup_state" = "not-found" ]; then
+              echo "already_published=false" >> "$GITHUB_OUTPUT"
+            else
+              cat /tmp/npm-view-error.txt
+              exit 1
+            fi
+          fi
+
+      - name: Run release verification
+        run: npm run verify
+
+      - name: Pack release tarball
+        id: pack
+        shell: bash
+        run: |
+          tarball=$(npm pack --cache ./.npm-cache)
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Detect npm auth mode
+        id: auth
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=trusted" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm with trusted publishing
+        if: ${{ steps.auth.outputs.mode == 'trusted' && steps.npm_state.outputs.already_published != 'true' }}
+        shell: bash
+        run: |
+          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ steps.meta.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+            exit 0
+          fi
+
+          publish_state=$(node ./scripts/classify-npm-publish-error.mjs /tmp/npm-publish-error.txt)
+
+          if [ "$publish_state" = "already-published" ]; then
+            echo "npm package version was already published during a rerun, continuing."
+          else
+            cat /tmp/npm-publish-error.txt
+            exit 1
+          fi
+
+      - name: Publish to npm with token fallback
+        if: ${{ steps.auth.outputs.mode == 'token' && steps.npm_state.outputs.already_published != 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ steps.meta.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+            exit 0
+          fi
+
+          publish_state=$(node ./scripts/classify-npm-publish-error.mjs /tmp/npm-publish-error.txt)
+
+          if [ "$publish_state" = "already-published" ]; then
+            echo "npm package version was already published during a rerun, continuing."
+          else
+            cat /tmp/npm-publish-error.txt
+            exit 1
+          fi
+
+      - name: Skip npm publish when version already exists
+        if: ${{ steps.npm_state.outputs.already_published == 'true' }}
+        run: echo "npm package version already published, skipping publish step."
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            if [ "${{ steps.meta.outputs.isPrerelease }}" = "true" ]; then
+              gh release edit "${{ steps.meta.outputs.tag }}" --prerelease
+            fi
+            gh release upload "${{ steps.meta.outputs.tag }}" "${{ steps.pack.outputs.tarball }}" --clobber
+          else
+            release_args=()
+            if [ "${{ steps.meta.outputs.isPrerelease }}" = "true" ]; then
+              release_args+=(--prerelease)
+            fi
+            gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.pack.outputs.tarball }}" --generate-notes --title "${{ steps.meta.outputs.tag }}" "${release_args[@]}"
+          fi
