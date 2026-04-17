@@ -1,0 +1,15 @@
+[workspace]
+members = [
+  "crates/kratos-core",
+  "crates/kratos-cli",
+  "crates/kratos-node",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["JeremyDev87"]
+homepage = "https://github.com/JeremyDev87/kratos"
+repository = "https://github.com/JeremyDev87/kratos"

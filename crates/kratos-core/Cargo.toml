@@ -1,0 +1,11 @@
+[package]
+name = "kratos-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Core domain and analysis surface for the Kratos Rust migration."
+
+[dependencies]
