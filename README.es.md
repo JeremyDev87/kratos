@@ -1,5 +1,7 @@
 # Kratos
 
+[![CI](https://github.com/JeremyDev87/kratos/actions/workflows/ci.yml/badge.svg)](https://github.com/JeremyDev87/kratos/actions/workflows/ci.yml)
+
 [한국어](README.md) | [English](README.en.md) | [中文](README.zh-CN.md) | Español | [日本語](README.ja.md)
 
 Destroy dead code ruthlessly.
@@ -116,6 +118,28 @@ Opcionalmente puedes añadir `kratos.config.json`.
 - Proyectos React / Next.js antiguos
 - Equipos con muchas funciones lanzadas y mucho código acumulado
 - Equipos que buscan el momento adecuado para refactorizar
+
+## Releases
+
+Kratos usa etiquetas de versión semántica como `v0.1.0` para publicar releases.
+
+```bash
+npm version 0.1.0 --no-git-tag-version
+git add package*.json
+git commit -m "chore: release v0.1.0"
+git tag v0.1.0
+git push origin HEAD
+git push origin v0.1.0
+```
+
+Cuando se envía una etiqueta, el [release workflow](.github/workflows/release.yml):
+
+- ejecuta `npm run verify`
+- genera el tarball de publicación para npm
+- publica las releases estables en npm `latest` y las prereleases en npm `next`
+- crea un GitHub Release y adjunta el tarball
+
+La configuración recomendada es npm Trusted Publishing (OIDC). Si todavía no está configurado, el workflow puede usar como fallback el secret `NPM_TOKEN` del repositorio.
 
 ## Open Source
 

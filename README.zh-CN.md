@@ -1,5 +1,7 @@
 # Kratos
 
+[![CI](https://github.com/JeremyDev87/kratos/actions/workflows/ci.yml/badge.svg)](https://github.com/JeremyDev87/kratos/actions/workflows/ci.yml)
+
 [한국어](README.md) | [English](README.en.md) | 中文 | [Español](README.es.md) | [日本語](README.ja.md)
 
 Destroy dead code ruthlessly.
@@ -116,6 +118,28 @@ Saved report: /.../fixtures/demo-app/.kratos/latest-report.json
 - 老旧的 React / Next.js 项目
 - 功能上线很多、代码不断堆积的团队
 - 正在寻找重构时机的团队
+
+## 发布
+
+Kratos 使用像 `v0.1.0` 这样的语义化版本标签进行发布。
+
+```bash
+npm version 0.1.0 --no-git-tag-version
+git add package*.json
+git commit -m "chore: release v0.1.0"
+git tag v0.1.0
+git push origin HEAD
+git push origin v0.1.0
+```
+
+当标签被推送后，[release workflow](.github/workflows/release.yml) 会执行以下操作：
+
+- 运行 `npm run verify`
+- 生成用于 npm 发布的 tarball
+- stable 版本发布到 npm `latest`，prerelease 发布到 npm `next`
+- 创建 GitHub Release 并附加 tarball
+
+推荐使用 npm Trusted Publishing（OIDC）。如果暂时还没有配置，也可以回退到仓库中的 `NPM_TOKEN` secret。
 
 ## 开源
 
