@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a bug, false positive, false negative, or CLI regression.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Kratos.
+        Please include enough detail for us to reproduce the issue.
+  - type: input
+    id: version
+    attributes:
+      label: Kratos version or commit
+      placeholder: e.g. 0.1.0 or a git SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Node.js version, OS, and shell
+      placeholder: e.g. Node 24.12.0, macOS 15, zsh
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact Kratos command you ran
+      placeholder: npx kratos scan ./my-app
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Share a small repo, fixture, or code sample if possible
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Logs, screenshots, or notes

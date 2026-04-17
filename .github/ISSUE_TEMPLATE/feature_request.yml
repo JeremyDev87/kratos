@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a new capability, workflow, or analysis rule for Kratos.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea.
+        The best requests describe the problem first, then the proposed behavior.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What pain point are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should Kratos do?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds are you using today?
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example repo shape or code
+      description: Optional example that would help clarify the request

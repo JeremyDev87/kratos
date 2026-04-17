@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security policy
+    url: https://github.com/JeremyDev87/kratos/security/policy
+    about: Please use the security policy for vulnerability reports.

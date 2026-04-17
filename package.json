@@ -1,0 +1,41 @@
+{
+  "name": "kratos",
+  "version": "0.1.0",
+  "description": "Destroy dead code ruthlessly.",
+  "author": "JeremyDev87",
+  "type": "module",
+  "homepage": "https://github.com/JeremyDev87/kratos#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JeremyDev87/kratos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JeremyDev87/kratos/issues"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/JeremyDev87"
+  },
+  "bin": {
+    "kratos": "./src/cli.js"
+  },
+  "scripts": {
+    "scan": "node ./src/cli.js scan",
+    "report": "node ./src/cli.js report",
+    "clean": "node ./src/cli.js clean",
+    "smoke": "node ./src/cli.js scan ./fixtures/demo-app && node ./src/cli.js report ./fixtures/demo-app/.kratos/latest-report.json",
+    "test": "node --test"
+  },
+  "keywords": [
+    "cli",
+    "dead-code",
+    "cleanup",
+    "react",
+    "nextjs",
+    "analysis"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
