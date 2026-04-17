@@ -6,6 +6,13 @@ import { DEFAULT_REPORT_RELATIVE_PATH } from "../lib/constants.js";
 import { ensureDir, writeJsonFile } from "../lib/fs.js";
 import { formatSummaryReport } from "../lib/report.js";
 
+export const scanCommand = {
+  name: "scan",
+  summary: "Analyze a codebase and save the latest report.",
+  usage: ["kratos scan [root] [--output path] [--json]"],
+  run: runScan,
+};
+
 export async function runScan(argv) {
   const { positionals, flags } = parseCliOptions(argv);
   const root = path.resolve(positionals[0] ?? process.cwd());

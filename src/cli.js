@@ -1,24 +1,17 @@
 #!/usr/bin/env node
 
-import { runClean } from "./commands/clean.js";
-import { runReport } from "./commands/report.js";
-import { runScan } from "./commands/scan.js";
+import { cleanCommand } from "./commands/clean.js";
+import { reportCommand } from "./commands/report.js";
+import { scanCommand } from "./commands/scan.js";
+import {
+  formatCommandHelp,
+  formatRootHelp,
+  formatUnknownCommand,
+} from "./lib/help.js";
 
 const [, , command, ...args] = process.argv;
-
-const HELP_TEXT = `Kratos
-Destroy dead code ruthlessly.
-
-Usage:
-  kratos scan [root] [--output path] [--json]
-  kratos report [report-path-or-root] [--format summary|json|md]
-  kratos clean [report-path-or-root] [--apply]
-
-Commands:
-  scan    Analyze a codebase and save the latest report.
-  report  Print a saved report in summary, json, or markdown form.
-  clean   Show deletion candidates or delete them with --apply.
-`;
+const COMMANDS = [scanCommand, reportCommand, cleanCommand];
+const COMMANDS_BY_NAME = new Map(COMMANDS.map((entry) => [entry.name, entry]));
 
 async function main() {
   switch (command) {
@@ -26,23 +19,26 @@ async function main() {
     case "--help":
     case "-h":
     case "help":
-      console.log(HELP_TEXT);
-      return;
-    case "scan":
-      await runScan(args);
-      return;
-    case "report":
-      await runReport(args);
-      return;
-    case "clean":
-      await runClean(args);
+      console.log(formatRootHelp(COMMANDS));
       return;
     default:
-      console.error(`Unknown command: ${command}`);
-      console.error("");
-      console.error(HELP_TEXT);
-      process.exitCode = 1;
+      break;
   }
+
+  const commandEntry = COMMANDS_BY_NAME.get(command);
+
+  if (!commandEntry) {
+    console.error(formatUnknownCommand(command, COMMANDS));
+    process.exitCode = 1;
+    return;
+  }
+
+  if (shouldShowCommandHelp(args)) {
+    console.log(formatCommandHelp(commandEntry));
+    return;
+  }
+
+  await commandEntry.run(args);
 }
 
 main().catch((error) => {
@@ -50,3 +46,7 @@ main().catch((error) => {
   console.error(`Kratos failed: ${message}`);
   process.exitCode = 1;
 });
+
+function shouldShowCommandHelp(args) {
+  return args.includes("--help") || (args.length === 1 && args[0] === "-h");
+}
