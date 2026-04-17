@@ -6,6 +6,13 @@ import {
   resolveReportInput,
 } from "../lib/report.js";
 
+export const reportCommand = {
+  name: "report",
+  summary: "Print a saved report in summary, json, or markdown form.",
+  usage: ["kratos report [report-path-or-root] [--format summary|json|md]"],
+  run: runReport,
+};
+
 export async function runReport(argv) {
   const { positionals, flags } = parseCliOptions(argv);
   const reportPath = resolveReportInput(positionals[0], process.cwd());

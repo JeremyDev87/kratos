@@ -11,6 +11,13 @@ import {
 } from "../lib/fs.js";
 import { resolveReportInput } from "../lib/report.js";
 
+export const cleanCommand = {
+  name: "clean",
+  summary: "Show deletion candidates or delete them with --apply.",
+  usage: ["kratos clean [report-path-or-root] [--apply]"],
+  run: runClean,
+};
+
 export async function runClean(argv) {
   const { positionals, flags } = parseCliOptions(argv);
   const reportPath = resolveReportInput(positionals[0], process.cwd());
