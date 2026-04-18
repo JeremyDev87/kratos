@@ -9,3 +9,9 @@ repository.workspace = true
 description = "Core domain and analysis surface for the Kratos Rust migration."
 
 [dependencies]
+oxc_allocator = "0.125.0"
+oxc_ast = "0.125.0"
+oxc_ast_visit = "0.125.0"
+oxc_parser = "0.125.0"
+oxc_span = "0.125.0"
+oxc_syntax = "0.125.0"

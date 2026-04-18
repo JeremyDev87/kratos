@@ -1,3 +1,5 @@
+use std::path::Path;
+
 pub mod adapter;
 pub mod exports;
 pub mod imports;
@@ -13,6 +15,6 @@ pub struct ParsedModule {
     pub unused_imports: Vec<UnusedImportRecord>,
 }
 
-pub fn parse_module_source(source: &str) -> KratosResult<ParsedModule> {
-    adapter::parse_module_source(source)
+pub fn parse_module_source(path: &Path, source: &str) -> KratosResult<ParsedModule> {
+    adapter::parse_module_source(path, source)
 }
