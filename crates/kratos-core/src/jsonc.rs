@@ -369,7 +369,7 @@ impl Parser {
                         'n' => value.push('\n'),
                         'r' => value.push('\r'),
                         't' => value.push('\t'),
-                        'u' => value.push(self.parse_unicode_escape()?),
+                        'u' => value.push_str(&self.parse_unicode_escape_fragment()?),
                         _ => return Err(self.error("Unsupported escape sequence")),
                     }
                 }
@@ -383,34 +383,38 @@ impl Parser {
         Err(self.error("Unterminated string"))
     }
 
-    fn parse_unicode_escape(&mut self) -> KratosResult<char> {
-        let first = self.parse_unicode_code_unit()?;
+    fn parse_unicode_escape_fragment(&mut self) -> KratosResult<String> {
+        let (first, first_hex) = self.parse_unicode_code_unit()?;
 
         if (0xD800..=0xDBFF).contains(&first) {
-            self.expect('\\')?;
-            self.expect('u')?;
-            let second = self.parse_unicode_code_unit()?;
+            if let Some((second, _)) = self.peek_unicode_code_unit_after_escape()? {
+                if (0xDC00..=0xDFFF).contains(&second) {
+                    self.pos += 2;
+                    let (second, _) = self.parse_unicode_code_unit()?;
 
-            if !(0xDC00..=0xDFFF).contains(&second) {
-                return Err(self.error("Invalid unicode surrogate pair"));
+                    let high = u32::from(first) - 0xD800;
+                    let low = u32::from(second) - 0xDC00;
+                    let codepoint = 0x10000 + ((high << 10) | low);
+
+                    let decoded = char::from_u32(codepoint)
+                        .ok_or_else(|| self.error("Invalid unicode codepoint"))?;
+                    return Ok(decoded.to_string());
+                }
             }
 
-            let high = u32::from(first) - 0xD800;
-            let low = u32::from(second) - 0xDC00;
-            let codepoint = 0x10000 + ((high << 10) | low);
-
-            return char::from_u32(codepoint)
-                .ok_or_else(|| self.error("Invalid unicode codepoint"));
+            return Ok(format!("\\u{first_hex}"));
         }
 
         if (0xDC00..=0xDFFF).contains(&first) {
-            return Err(self.error("Unexpected low surrogate"));
+            return Ok(format!("\\u{first_hex}"));
         }
 
-        char::from_u32(u32::from(first)).ok_or_else(|| self.error("Invalid unicode codepoint"))
+        let decoded = char::from_u32(u32::from(first))
+            .ok_or_else(|| self.error("Invalid unicode codepoint"))?;
+        Ok(decoded.to_string())
     }
 
-    fn parse_unicode_code_unit(&mut self) -> KratosResult<u16> {
+    fn parse_unicode_code_unit(&mut self) -> KratosResult<(u16, String)> {
         let mut hex = String::new();
 
         for _ in 0..4 {
@@ -425,7 +429,33 @@ impl Parser {
             hex.push(ch);
         }
 
-        u16::from_str_radix(&hex, 16).map_err(|_| self.error("Invalid unicode escape"))
+        let code_unit =
+            u16::from_str_radix(&hex, 16).map_err(|_| self.error("Invalid unicode escape"))?;
+        Ok((code_unit, hex))
+    }
+
+    fn peek_unicode_code_unit_after_escape(&self) -> KratosResult<Option<(u16, String)>> {
+        if self.chars.get(self.pos) != Some(&'\\') || self.chars.get(self.pos + 1) != Some(&'u') {
+            return Ok(None);
+        }
+
+        let mut hex = String::new();
+
+        for offset in 2..6 {
+            let Some(ch) = self.chars.get(self.pos + offset).copied() else {
+                return Ok(None);
+            };
+
+            if !ch.is_ascii_hexdigit() {
+                return Err(self.error("Invalid unicode escape"));
+            }
+
+            hex.push(ch);
+        }
+
+        let code_unit =
+            u16::from_str_radix(&hex, 16).map_err(|_| self.error("Invalid unicode escape"))?;
+        Ok(Some((code_unit, hex)))
     }
 
     fn parse_number(&mut self) -> KratosResult<String> {
@@ -435,7 +465,17 @@ impl Parser {
             self.pos += 1;
         }
 
-        self.consume_digits()?;
+        match self.peek() {
+            Some('0') => {
+                self.pos += 1;
+
+                if matches!(self.peek(), Some('0'..='9')) {
+                    return Err(self.error("Leading zeros are not allowed"));
+                }
+            }
+            Some('1'..='9') => self.consume_digits()?,
+            _ => return Err(self.error("Expected digit")),
+        }
 
         if self.peek() == Some('.') {
             self.pos += 1;
