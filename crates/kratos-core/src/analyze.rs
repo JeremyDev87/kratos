@@ -15,6 +15,8 @@ use crate::model::{
 use crate::parser::parse_module_source;
 use crate::resolve::{resolve_import_target, unresolved_import};
 
+const DEFAULT_CONFIG_FILENAME: &str = "kratos.config.json";
+
 pub fn analyze_project(root: &Path) -> KratosResult<ReportV2> {
     let config = load_project_config(root)?;
     analyze_with_config(&config)
@@ -183,6 +185,10 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
 
     let mut report = ReportV2::new(config.root.clone());
     report.generated_at = Some(current_timestamp());
+    report.config_path = config.config_path.clone().or_else(|| {
+        let candidate = config.root.join(DEFAULT_CONFIG_FILENAME);
+        candidate.exists().then_some(candidate)
+    });
     report.summary.files_scanned = modules.len();
     report.summary.entrypoints = modules
         .values()
