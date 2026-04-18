@@ -45,6 +45,9 @@ pub struct ModuleRecord {
     pub resolved_imports: Vec<ResolvedImportRecord>,
     pub importers: Vec<ImportUsageRecord>,
     pub imported_by: Vec<PathBuf>,
+    pub imported_by_count: usize,
+    pub import_count: usize,
+    pub export_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
