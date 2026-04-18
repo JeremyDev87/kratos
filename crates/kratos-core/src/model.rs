@@ -31,6 +31,7 @@ impl ProjectConfig {
 pub struct PathAlias {
     pub alias: String,
     pub target: PathBuf,
+    pub target_pattern: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -148,6 +149,7 @@ pub struct ImportResolution {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ImportResolutionKind {
     Source,
+    Asset,
     External,
     MissingInternal,
 }

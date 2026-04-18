@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::KratosResult;
@@ -77,7 +78,8 @@ pub fn apply_path_aliases(
     config: &mut ProjectConfig,
     mut aliases: Vec<PathAlias>,
 ) -> KratosResult<()> {
-    aliases.sort_by(|left, right| right.alias.len().cmp(&left.alias.len()));
+    // Stable ordering keeps same-length aliases in insertion order, matching JS behavior.
+    aliases.sort_by_key(|alias| Reverse(alias.alias.len()));
     config.path_aliases = aliases;
     Ok(())
 }
@@ -118,10 +120,13 @@ fn normalize_ignored_directories(ignore: Option<&JsonValue>) -> Vec<String> {
 }
 
 fn normalize_entry_paths(root: &Path, entries: Option<&JsonValue>) -> KratosResult<Vec<PathBuf>> {
-    Ok(extract_required_string_array(entries, "entry")?
-        .into_iter()
-        .map(|entry| resolve_path(root, &entry))
-        .collect())
+    let mut normalized = Vec::new();
+
+    for entry in extract_required_string_array(entries, "entry")? {
+        push_unique_path(&mut normalized, resolve_path(root, &entry));
+    }
+
+    Ok(normalized)
 }
 
 fn normalize_path_aliases(
@@ -150,14 +155,16 @@ fn normalize_path_aliases(
 
             aliases.push(PathAlias {
                 alias: alias.clone(),
-                target: resolve_path(resolution_base, strip_wildcard(target)),
+                target: resolve_path(resolution_base, &target.replace('*', "")),
+                target_pattern: target
+                    .contains('*')
+                    .then(|| resolve_alias_target_pattern(resolution_base, target)),
             });
         }
     }
 
-    aliases.sort_by(|left, right| {
-        right.alias.len().cmp(&left.alias.len())
-    });
+    // Stable ordering keeps same-length aliases in insertion order, matching JS behavior.
+    aliases.sort_by_key(|alias| Reverse(alias.alias.len()));
     Ok(aliases)
 }
 
@@ -187,7 +194,13 @@ fn collect_package_entry_files(root: &Path, package_json: &JsonValue) -> Vec<Pat
 
 fn collect_exports(entries: &mut Vec<PathBuf>, root: &Path, value: &JsonValue) {
     match value {
-        JsonValue::String(path) => push_unique_path(entries, resolve_path(root, path)),
+        JsonValue::String(path) => {
+            if path.is_empty() {
+                return;
+            }
+
+            push_unique_path(entries, resolve_path(root, path))
+        }
         JsonValue::Array(values) => {
             for nested in values {
                 collect_exports(entries, root, nested);
@@ -275,10 +288,6 @@ fn resolve_path(root: &Path, value: &str) -> PathBuf {
     }
 }
 
-fn strip_wildcard(value: &str) -> &str {
-    value.strip_suffix('*').unwrap_or(value)
-}
-
 fn push_unique_path(values: &mut Vec<PathBuf>, candidate: PathBuf) {
     if !values.iter().any(|entry| entry == &candidate) {
         values.push(candidate);
@@ -289,6 +298,16 @@ fn push_unique_string(values: &mut Vec<String>, candidate: String) {
     if !values.iter().any(|entry| entry == &candidate) {
         values.push(candidate);
     }
+}
+
+fn resolve_alias_target_pattern(root: &Path, value: &str) -> String {
+    const WILDCARD_TOKEN: &str = "__KRATOS_WILDCARD__";
+
+    let tokenized = value.replace('*', WILDCARD_TOKEN);
+    let resolved = resolve_path(root, &tokenized);
+    resolved
+        .to_string_lossy()
+        .replace(WILDCARD_TOKEN, "*")
 }
 
 fn config_error(message: &str) -> crate::error::KratosError {
@@ -304,8 +323,16 @@ fn normalize_path(path: PathBuf) -> PathBuf {
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::CurDir => {}
             Component::ParentDir => {
-                if !normalized.pop() && !path.is_absolute() {
-                    normalized.push(component.as_os_str());
+                match normalized.components().next_back() {
+                    Some(Component::Normal(_)) => {
+                        normalized.pop();
+                    }
+                    Some(Component::ParentDir) | None => {
+                        if !path.is_absolute() {
+                            normalized.push(component.as_os_str());
+                        }
+                    }
+                    Some(Component::Prefix(_)) | Some(Component::RootDir) | Some(Component::CurDir) => {}
                 }
             }
             Component::Normal(part) => normalized.push(part),
@@ -316,5 +343,19 @@ fn normalize_path(path: PathBuf) -> PathBuf {
         PathBuf::from(".")
     } else {
         normalized
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn normalize_path_preserves_leading_parent_segments() {
+        assert_eq!(
+            normalize_path(PathBuf::from("../../src")),
+            PathBuf::from("../../src")
+        );
     }
 }

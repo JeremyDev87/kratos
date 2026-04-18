@@ -24,7 +24,8 @@ fn load_project_config_parses_comments_and_collects_entries() {
       "import": "./dist/index.mjs",
       "types": "./dist/index.d.ts"
     },
-    "./cli": "./dist/cli.js"
+    "./cli": "./dist/cli.js",
+    "./empty": ""
   }
 }
 "#,
@@ -47,7 +48,7 @@ fn load_project_config_parses_comments_and_collects_entries() {
         "kratos.config.json",
         r#"{
   "ignore": ["custom-cache",],
-  "entry": ["src/main.ts",],
+  "entry": ["src/main.ts", "./src/./main.ts"],
   "roots": ["src", "missing",],
 }
 "#,
@@ -86,6 +87,10 @@ fn load_project_config_parses_comments_and_collects_entries() {
     assert!(config
         .package_entries
         .contains(&project.root().join("dist/cli.js")));
+    assert!(
+        !config.package_entries.contains(&project.root().to_path_buf()),
+        "empty export targets should be ignored"
+    );
 }
 
 #[test]
@@ -125,16 +130,21 @@ fn resolve_import_target_uses_paths_base_url_and_directory_fallbacks() {
     "baseUrl": "src",
     "paths": {
       "@/*": ["./*"],
-      "@cfg": ["./config/index.ts"]
+      "@cfg": ["./config/index.ts"],
+      "@view/*": ["./views/*/index.ts"],
+      "@fixed/*": ["./fixed/index.ts"]
     }
   }
 }
 "#,
     );
     project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/app/logo.svg", "<svg />\n");
     project.write("src/lib/math.ts", "export const add = true;\n");
     project.write("src/shared/index.ts", "export const shared = true;\n");
     project.write("src/config/index.ts", "export const config = true;\n");
+    project.write("src/views/home/index.ts", "export const view = true;\n");
+    project.write("src/fixed/index.ts", "export const fixed = true;\n");
     project.write("lib/root-entry.ts", "export const rootEntry = true;\n");
 
     let config = load_project_config(project.root()).expect("config should load");
@@ -152,6 +162,19 @@ fn resolve_import_target_uses_paths_base_url_and_directory_fallbacks() {
     assert_eq!(base_url.kind, ImportResolutionKind::Source);
     assert_eq!(base_url.path, Some(project.root().join("src/shared/index.ts")));
 
+    let middle_wildcard =
+        resolve_import_target("@view/home", &importer, &config).expect("middle wildcard");
+    assert_eq!(middle_wildcard.kind, ImportResolutionKind::Source);
+    assert_eq!(
+        middle_wildcard.path,
+        Some(project.root().join("src/views/home/index.ts"))
+    );
+
+    let fixed_target =
+        resolve_import_target("@fixed/anything", &importer, &config).expect("fixed target");
+    assert_eq!(fixed_target.kind, ImportResolutionKind::MissingInternal);
+    assert_eq!(fixed_target.path, None);
+
     let root_relative =
         resolve_import_target("/lib/root-entry", &importer, &config).expect("root relative");
     assert_eq!(root_relative.kind, ImportResolutionKind::Source);
@@ -160,6 +183,10 @@ fn resolve_import_target_uses_paths_base_url_and_directory_fallbacks() {
     let builtin = resolve_import_target("node:path", &importer, &config).expect("builtin");
     assert_eq!(builtin.kind, ImportResolutionKind::External);
     assert_eq!(builtin.path, None);
+
+    let asset = resolve_import_target("./logo.svg", &importer, &config).expect("asset resolves");
+    assert_eq!(asset.kind, ImportResolutionKind::Asset);
+    assert_eq!(asset.path, Some(project.root().join("src/app/logo.svg")));
 
     let missing = resolve_import_target("./missing", &importer, &config).expect("missing");
     assert_eq!(missing.kind, ImportResolutionKind::MissingInternal);
@@ -326,6 +353,21 @@ fn resolve_import_target_normalizes_dot_segments_in_requests() {
 }
 
 #[test]
+fn resolve_import_target_accepts_relative_importer_paths() {
+    let (project, relative_root) = TestProject::new_relative_to_current_dir("relative-importer");
+    project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/app/bar.ts", "export const bar = true;\n");
+
+    let config = load_project_config(relative_root.clone()).expect("config should load");
+    let importer = relative_root.join("src/app/main.ts");
+
+    let resolution =
+        resolve_import_target("./bar", &importer, &config).expect("relative importer resolves");
+    assert_eq!(resolution.kind, ImportResolutionKind::Source);
+    assert_eq!(resolution.path, Some(project.root().join("src/app/bar.ts")));
+}
+
+#[test]
 fn parse_loose_json_rejects_control_characters_and_supports_surrogate_pairs() {
     let parsed = parse_loose_json(r#"{ "emoji": "\uD83D\uDE00" }"#)
         .expect("surrogate pair should parse");
@@ -343,6 +385,26 @@ fn parse_loose_json_rejects_control_characters_and_supports_surrogate_pairs() {
             .contains("Unescaped control character in string"),
         "unexpected error: {invalid}"
     );
+
+    let leading_zero = parse_loose_json(r#"{"count":01}"#)
+        .expect_err("leading-zero numbers should be rejected");
+    assert!(
+        leading_zero
+            .to_string()
+            .contains("Leading zeros are not allowed"),
+        "unexpected error: {leading_zero}"
+    );
+
+    let lone_surrogate = parse_loose_json(r#"{ "value": "\uD83D" }"#)
+        .expect("lone surrogate escapes should stay loadable");
+    let lone_value = lone_surrogate
+        .get("value")
+        .and_then(JsonValue::as_str)
+        .expect("value string should exist");
+    assert!(
+        lone_value == "\\uD83D" || lone_value == "\\ud83d",
+        "unexpected lone surrogate representation: {lone_value}"
+    );
 }
 
 #[test]
@@ -359,7 +421,9 @@ fn load_project_config_rejects_non_string_array_items() {
 
     let error = load_project_config(project.root()).expect_err("invalid roots should fail");
     assert!(
-        error.to_string().contains("roots must contain only string values"),
+        error
+            .to_string()
+            .contains("roots must contain only string values"),
         "unexpected error: {error}"
     );
 
@@ -373,7 +437,9 @@ fn load_project_config_rejects_non_string_array_items() {
 
     let error = load_project_config(project.root()).expect_err("invalid entry should fail");
     assert!(
-        error.to_string().contains("entry must contain only string values"),
+        error
+            .to_string()
+            .contains("entry must contain only string values"),
         "unexpected error: {error}"
     );
 
@@ -397,6 +463,47 @@ fn load_project_config_rejects_non_string_array_items() {
             .contains("compilerOptions.paths['@/*'] must contain only string targets"),
         "unexpected error: {error}"
     );
+
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "roots": "src"
+}
+"#,
+    );
+    project.write("tsconfig.json", "{}\n");
+
+    let config = load_project_config(project.root()).expect("non-array roots should be ignored");
+    assert_eq!(config.roots, vec![project.root().to_path_buf()]);
+
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "paths": []
+  }
+}
+"#,
+    );
+    project.write("kratos.config.json", "{}\n");
+
+    let config = load_project_config(project.root()).expect("non-object paths should be ignored");
+    assert!(config.path_aliases.is_empty());
+
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "paths": {
+      "@/*": "./src/*"
+    }
+  }
+}
+"#,
+    );
+
+    let config = load_project_config(project.root()).expect("non-array alias targets should be ignored");
+    assert!(config.path_aliases.is_empty());
 }
 
 struct TestProject {

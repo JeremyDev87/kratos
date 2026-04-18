@@ -19,6 +19,7 @@ pub fn resolve_import_target(
     config: &ProjectConfig,
 ) -> KratosResult<ImportResolution> {
     let project_root = normalize_config_path(&config.root);
+    let importer_path = normalize_config_path(importer_path);
 
     if request.starts_with("node:") {
         return Ok(external_import(request, None));
@@ -62,6 +63,11 @@ fn resolve_aliased_import(request: &str, alias: &PathAlias) -> PathBuf {
         return alias.target.clone();
     };
 
+    if let Some(pattern) = &alias.target_pattern {
+        let substituted = pattern.replacen('*', capture, 1);
+        return normalize_path(PathBuf::from(substituted));
+    }
+
     if capture.is_empty() {
         alias.target.clone()
     } else {
@@ -92,6 +98,8 @@ fn resolve_internal_path(base_path: &Path, request: &str) -> KratosResult<Import
 
     let kind = if is_source_path(&path) {
         ImportResolutionKind::Source
+    } else if path.is_file() {
+        ImportResolutionKind::Asset
     } else {
         ImportResolutionKind::External
     };
@@ -174,8 +182,16 @@ fn normalize_path(path: PathBuf) -> PathBuf {
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::CurDir => {}
             Component::ParentDir => {
-                if !normalized.pop() && !path.is_absolute() {
-                    normalized.push(component.as_os_str());
+                match normalized.components().next_back() {
+                    Some(Component::Normal(_)) => {
+                        normalized.pop();
+                    }
+                    Some(Component::ParentDir) | None => {
+                        if !path.is_absolute() {
+                            normalized.push(component.as_os_str());
+                        }
+                    }
+                    Some(Component::Prefix(_)) | Some(Component::RootDir) | Some(Component::CurDir) => {}
                 }
             }
             Component::Normal(part) => normalized.push(part),
@@ -186,5 +202,19 @@ fn normalize_path(path: PathBuf) -> PathBuf {
         PathBuf::from(".")
     } else {
         normalized
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn normalize_path_preserves_leading_parent_segments() {
+        assert_eq!(
+            normalize_path(PathBuf::from("../../src")),
+            PathBuf::from("../../src")
+        );
     }
 }
