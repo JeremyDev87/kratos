@@ -47,7 +47,11 @@ pub fn resolve_import_target(
         return resolve_internal_path(&candidate, request);
     }
 
-    if let Some(base_url) = config.base_url.as_ref().map(|value| normalize_config_path(value)) {
+    if let Some(base_url) = config
+        .base_url
+        .as_ref()
+        .map(|value| normalize_config_path(value))
+    {
         let resolution = resolve_internal_path(&base_url.join(request), request)?;
 
         if resolution.kind != ImportResolutionKind::MissingInternal {
@@ -181,19 +185,18 @@ fn normalize_path(path: PathBuf) -> PathBuf {
             Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::CurDir => {}
-            Component::ParentDir => {
-                match normalized.components().next_back() {
-                    Some(Component::Normal(_)) => {
-                        normalized.pop();
-                    }
-                    Some(Component::ParentDir) | None => {
-                        if !path.is_absolute() {
-                            normalized.push(component.as_os_str());
-                        }
-                    }
-                    Some(Component::Prefix(_)) | Some(Component::RootDir) | Some(Component::CurDir) => {}
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    normalized.pop();
                 }
-            }
+                Some(Component::ParentDir) | None => {
+                    if !path.is_absolute() {
+                        normalized.push(component.as_os_str());
+                    }
+                }
+                Some(Component::Prefix(_)) | Some(Component::RootDir) | Some(Component::CurDir) => {
+                }
+            },
             Component::Normal(part) => normalized.push(part),
         }
     }

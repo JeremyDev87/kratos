@@ -306,9 +306,7 @@ fn resolve_alias_target_pattern(root: &Path, value: &str) -> String {
 
     let tokenized = value.replace('*', WILDCARD_TOKEN);
     let resolved = resolve_path(root, &tokenized);
-    resolved
-        .to_string_lossy()
-        .replace(WILDCARD_TOKEN, "*")
+    resolved.to_string_lossy().replace(WILDCARD_TOKEN, "*")
 }
 
 fn config_error(message: &str) -> crate::error::KratosError {
@@ -323,19 +321,18 @@ fn normalize_path(path: PathBuf) -> PathBuf {
             Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
             Component::RootDir => normalized.push(component.as_os_str()),
             Component::CurDir => {}
-            Component::ParentDir => {
-                match normalized.components().next_back() {
-                    Some(Component::Normal(_)) => {
-                        normalized.pop();
-                    }
-                    Some(Component::ParentDir) | None => {
-                        if !path.is_absolute() {
-                            normalized.push(component.as_os_str());
-                        }
-                    }
-                    Some(Component::Prefix(_)) | Some(Component::RootDir) | Some(Component::CurDir) => {}
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    normalized.pop();
                 }
-            }
+                Some(Component::ParentDir) | None => {
+                    if !path.is_absolute() {
+                        normalized.push(component.as_os_str());
+                    }
+                }
+                Some(Component::Prefix(_)) | Some(Component::RootDir) | Some(Component::CurDir) => {
+                }
+            },
             Component::Normal(part) => normalized.push(part),
         }
     }

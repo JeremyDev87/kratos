@@ -25,7 +25,10 @@ impl Display for KratosError {
             Self::Json(message) => write!(f, "JSON error: {message}"),
             Self::Config(message) => write!(f, "Config error: {message}"),
             Self::InvalidReportVersion { expected, found } => {
-                write!(f, "Invalid report version: expected {expected}, found {found}")
+                write!(
+                    f,
+                    "Invalid report version: expected {expected}, found {found}"
+                )
             }
             Self::NotImplemented { feature } => {
                 write!(f, "Not implemented yet: {feature}")
