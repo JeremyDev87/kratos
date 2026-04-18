@@ -1,6 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::KratosResult;
+use crate::jsonc::{parse_loose_json, JsonValue};
 use crate::model::{ImportResolution, ImportResolutionKind, PathAlias, ProjectConfig};
 
 const SOURCE_EXTENSIONS: &[&str] = &[".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"];
@@ -57,6 +58,18 @@ pub fn resolve_import_target(
         if resolution.kind != ImportResolutionKind::MissingInternal {
             return Ok(resolution);
         }
+
+        if is_builtin_module(request) {
+            return Ok(external_import(request, None));
+        }
+
+        if !is_external_package(request, importer_path.as_path(), config) {
+            return Ok(unresolved_import(request));
+        }
+    }
+
+    if is_builtin_module(request) {
+        return Ok(external_import(request, None));
     }
 
     Ok(external_import(request, None))
@@ -165,6 +178,174 @@ fn external_import(source: &str, path: Option<PathBuf>) -> ImportResolution {
         source: source.to_string(),
         path,
     }
+}
+
+fn is_external_package(request: &str, importer_path: &Path, config: &ProjectConfig) -> bool {
+    if is_declared_external_package(request, config) {
+        return true;
+    }
+
+    let Some(package_name) = requested_package_name(request) else {
+        return false;
+    };
+
+    importer_declares_external_package(
+        importer_path,
+        &normalize_config_path(&config.root),
+        &package_name,
+    )
+}
+
+fn is_declared_external_package(request: &str, config: &ProjectConfig) -> bool {
+    let Some(package_name) = requested_package_name(request) else {
+        return false;
+    };
+
+    config.external_packages.contains(package_name.as_str())
+}
+
+fn importer_declares_external_package(
+    importer_path: &Path,
+    project_root: &Path,
+    package_name: &str,
+) -> bool {
+    let mut current = importer_path
+        .parent()
+        .unwrap_or(importer_path)
+        .to_path_buf();
+
+    loop {
+        if !current.starts_with(project_root) {
+            return false;
+        }
+
+        if current != project_root
+            && package_json_declares_dependency(&current.join("package.json"), package_name)
+        {
+            return true;
+        }
+
+        if current == project_root {
+            return false;
+        }
+
+        if !current.pop() {
+            return false;
+        }
+    }
+}
+
+fn package_json_declares_dependency(package_json_path: &Path, package_name: &str) -> bool {
+    let Ok(content) = std::fs::read_to_string(package_json_path) else {
+        return false;
+    };
+    let Ok(json) = parse_loose_json(&content) else {
+        return false;
+    };
+
+    dependency_map_contains(json.get("dependencies"), package_name)
+        || dependency_map_contains(json.get("devDependencies"), package_name)
+        || dependency_map_contains(json.get("peerDependencies"), package_name)
+        || dependency_map_contains(json.get("optionalDependencies"), package_name)
+}
+
+fn dependency_map_contains(value: Option<&JsonValue>, package_name: &str) -> bool {
+    value
+        .and_then(JsonValue::as_object)
+        .map(|packages| packages.get(package_name).is_some())
+        .unwrap_or(false)
+}
+
+fn requested_package_name(request: &str) -> Option<String> {
+    if request.is_empty()
+        || request.starts_with('.')
+        || request.starts_with('/')
+        || request.starts_with("node:")
+    {
+        return None;
+    }
+
+    if request.starts_with('@') {
+        let mut parts = request.split('/');
+        let scope = parts.next()?;
+        let package = parts.next()?;
+
+        if package.is_empty() {
+            return None;
+        }
+
+        return Some(format!("{scope}/{package}"));
+    }
+
+    request
+        .split('/')
+        .next()
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
+}
+
+fn is_builtin_module(request: &str) -> bool {
+    matches!(
+        requested_package_name(request).as_deref(),
+        Some(
+            "_http_agent"
+                | "_http_client"
+                | "_http_common"
+                | "_http_incoming"
+                | "_http_outgoing"
+                | "_http_server"
+                | "_stream_duplex"
+                | "_stream_passthrough"
+                | "_stream_readable"
+                | "_stream_transform"
+                | "_stream_wrap"
+                | "_stream_writable"
+                | "_tls_common"
+                | "_tls_wrap"
+                | "assert"
+                | "async_hooks"
+                | "buffer"
+                | "child_process"
+                | "cluster"
+                | "console"
+                | "constants"
+                | "crypto"
+                | "dgram"
+                | "diagnostics_channel"
+                | "dns"
+                | "domain"
+                | "events"
+                | "fs"
+                | "http"
+                | "http2"
+                | "https"
+                | "inspector"
+                | "module"
+                | "net"
+                | "os"
+                | "path"
+                | "perf_hooks"
+                | "process"
+                | "punycode"
+                | "querystring"
+                | "readline"
+                | "repl"
+                | "stream"
+                | "string_decoder"
+                | "sys"
+                | "timers"
+                | "tls"
+                | "trace_events"
+                | "tty"
+                | "url"
+                | "util"
+                | "v8"
+                | "vm"
+                | "wasi"
+                | "worker_threads"
+                | "zlib"
+        )
+    )
 }
 
 fn is_source_path(path: &Path) -> bool {

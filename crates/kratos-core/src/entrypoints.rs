@@ -57,28 +57,31 @@ fn to_project_path(file_path: &Path, root: &Path) -> String {
 }
 
 fn is_next_app_route(relative_path: &str) -> bool {
-    if !relative_path.starts_with("app/") {
-        return false;
-    }
+    let segments = relative_path.split('/').collect::<Vec<_>>();
 
-    let nested = &relative_path["app/".len()..];
-    if !nested.contains('/') {
-        return false;
-    }
-
-    let file_name = relative_path.rsplit('/').next().unwrap_or(relative_path);
-    let Some((stem, extension)) = file_name.rsplit_once('.') else {
-        return false;
-    };
-
-    if extension.is_empty() || extension.contains('.') || stem.contains('.') {
-        return false;
-    }
-
-    matches!(
-        stem,
-        "page" | "route" | "layout" | "loading" | "error" | "not-found"
-    )
+    has_supported_segment(&segments, "app")
+        && segments.len() >= 2
+        && matches_file_stem(
+            segments.last().copied().unwrap_or_default(),
+            &[
+                "page",
+                "route",
+                "layout",
+                "loading",
+                "error",
+                "not-found",
+                "default",
+                "template",
+                "global-error",
+                "robots",
+                "sitemap",
+                "icon",
+                "apple-icon",
+                "opengraph-image",
+                "twitter-image",
+                "manifest",
+            ],
+        )
 }
 
 #[cfg(test)]
@@ -88,24 +91,97 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn next_app_route_requires_nested_segment_for_js_parity() {
+    fn next_app_route_supports_root_src_and_nested_package_paths() {
         let root = PathBuf::from("/tmp/kratos-entrypoints");
         let config = ProjectConfig::new(root.clone());
 
         let root_level = detect_entrypoint_kind(&root.join("app/page.tsx"), &config)
             .expect("entrypoint detection should succeed");
+        let src_root_level = detect_entrypoint_kind(&root.join("src/app/page.tsx"), &config)
+            .expect("entrypoint detection should succeed");
         let nested = detect_entrypoint_kind(&root.join("app/home/page.tsx"), &config)
             .expect("entrypoint detection should succeed");
+        let template = detect_entrypoint_kind(&root.join("app/template.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let global_error = detect_entrypoint_kind(&root.join("src/app/global-error.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let parallel_default =
+            detect_entrypoint_kind(&root.join("app/@modal/default.tsx"), &config)
+                .expect("entrypoint detection should succeed");
+        let robots = detect_entrypoint_kind(&root.join("app/robots.ts"), &config)
+            .expect("entrypoint detection should succeed");
+        let opengraph = detect_entrypoint_kind(&root.join("app/opengraph-image.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let package_root = detect_entrypoint_kind(&root.join("packages/web/app/page.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let nested_package = detect_entrypoint_kind(
+            &root.join("packages/web/src/app/settings/page.tsx"),
+            &config,
+        )
+        .expect("entrypoint detection should succeed");
         let nested_test = detect_entrypoint_kind(&root.join("app/home/page.test.tsx"), &config)
             .expect("entrypoint detection should succeed");
         let nested_spec =
             detect_entrypoint_kind(&root.join("app/home/not-found.spec.tsx"), &config)
                 .expect("entrypoint detection should succeed");
 
-        assert_eq!(root_level, None);
+        assert_eq!(root_level, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(src_root_level, Some(EntrypointKind::NextAppRoute));
         assert_eq!(nested, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(template, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(global_error, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(parallel_default, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(robots, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(opengraph, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(package_root, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(nested_package, Some(EntrypointKind::NextAppRoute));
         assert_eq!(nested_test, None);
         assert_eq!(nested_spec, None);
+    }
+
+    #[test]
+    fn next_pages_route_supports_optional_src_prefix_and_nested_packages() {
+        let root = PathBuf::from("/tmp/kratos-entrypoints");
+        let config = ProjectConfig::new(root.clone());
+
+        let root_pages = detect_entrypoint_kind(&root.join("pages/index.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let src_pages = detect_entrypoint_kind(&root.join("src/pages/index.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let package_root =
+            detect_entrypoint_kind(&root.join("packages/web/pages/index.tsx"), &config)
+                .expect("entrypoint detection should succeed");
+        let nested_package =
+            detect_entrypoint_kind(&root.join("packages/web/src/pages/index.tsx"), &config)
+                .expect("entrypoint detection should succeed");
+        let dotted_page = detect_entrypoint_kind(&root.join("pages/home.page.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let dotted_api = detect_entrypoint_kind(&root.join("src/pages/api.v1.ts"), &config)
+            .expect("entrypoint detection should succeed");
+
+        assert_eq!(root_pages, Some(EntrypointKind::NextPagesRoute));
+        assert_eq!(src_pages, Some(EntrypointKind::NextPagesRoute));
+        assert_eq!(package_root, Some(EntrypointKind::NextPagesRoute));
+        assert_eq!(nested_package, Some(EntrypointKind::NextPagesRoute));
+        assert_eq!(dotted_page, Some(EntrypointKind::NextPagesRoute));
+        assert_eq!(dotted_api, Some(EntrypointKind::NextPagesRoute));
+    }
+
+    #[test]
+    fn app_entry_supports_nested_package_src_paths() {
+        let root = PathBuf::from("/tmp/kratos-entrypoints");
+        let config = ProjectConfig::new(root.clone());
+
+        let root_entry = detect_entrypoint_kind(&root.join("src/main.ts"), &config)
+            .expect("entrypoint detection should succeed");
+        let nested_entry = detect_entrypoint_kind(&root.join("packages/cli/src/main.ts"), &config)
+            .expect("entrypoint detection should succeed");
+        let nested_non_src = detect_entrypoint_kind(&root.join("packages/cli/main.ts"), &config)
+            .expect("entrypoint detection should succeed");
+
+        assert_eq!(root_entry, Some(EntrypointKind::AppEntry));
+        assert_eq!(nested_entry, Some(EntrypointKind::AppEntry));
+        assert_eq!(nested_non_src, None);
     }
 
     #[test]
@@ -127,77 +203,23 @@ mod tests {
 }
 
 fn is_next_pages_route(relative_path: &str) -> bool {
-    relative_path.starts_with("pages/") && relative_path.rsplit('/').next().is_some()
+    let segments = relative_path.split('/').collect::<Vec<_>>();
+    has_supported_segment(&segments, "pages")
+        && segments.len() >= 2
+        && has_extension(segments.last().copied().unwrap_or_default())
 }
 
 fn is_app_entry(relative_path: &str) -> bool {
-    matches!(
-        relative_path,
-        "main.js"
-            | "main.jsx"
-            | "main.ts"
-            | "main.tsx"
-            | "main.mjs"
-            | "main.cjs"
-            | "main.mts"
-            | "main.cts"
-            | "index.js"
-            | "index.jsx"
-            | "index.ts"
-            | "index.tsx"
-            | "index.mjs"
-            | "index.cjs"
-            | "index.mts"
-            | "index.cts"
-            | "bootstrap.js"
-            | "bootstrap.jsx"
-            | "bootstrap.ts"
-            | "bootstrap.tsx"
-            | "bootstrap.mjs"
-            | "bootstrap.cjs"
-            | "bootstrap.mts"
-            | "bootstrap.cts"
-            | "cli.js"
-            | "cli.jsx"
-            | "cli.ts"
-            | "cli.tsx"
-            | "cli.mjs"
-            | "cli.cjs"
-            | "cli.mts"
-            | "cli.cts"
-            | "src/main.js"
-            | "src/main.jsx"
-            | "src/main.ts"
-            | "src/main.tsx"
-            | "src/main.mjs"
-            | "src/main.cjs"
-            | "src/main.mts"
-            | "src/main.cts"
-            | "src/index.js"
-            | "src/index.jsx"
-            | "src/index.ts"
-            | "src/index.tsx"
-            | "src/index.mjs"
-            | "src/index.cjs"
-            | "src/index.mts"
-            | "src/index.cts"
-            | "src/bootstrap.js"
-            | "src/bootstrap.jsx"
-            | "src/bootstrap.ts"
-            | "src/bootstrap.tsx"
-            | "src/bootstrap.mjs"
-            | "src/bootstrap.cjs"
-            | "src/bootstrap.mts"
-            | "src/bootstrap.cts"
-            | "src/cli.js"
-            | "src/cli.jsx"
-            | "src/cli.ts"
-            | "src/cli.tsx"
-            | "src/cli.mjs"
-            | "src/cli.cjs"
-            | "src/cli.mts"
-            | "src/cli.cts"
-    )
+    let segments = relative_path.split('/').collect::<Vec<_>>();
+    let Some(file_name) = segments.last().copied() else {
+        return false;
+    };
+
+    if !matches_file_stem(file_name, &["main", "index", "bootstrap", "cli"]) {
+        return false;
+    }
+
+    segments.len() == 1 || segments[segments.len() - 2] == "src"
 }
 
 fn is_tooling_entry(relative_path: &str) -> bool {
@@ -221,6 +243,43 @@ fn is_tooling_entry(relative_path: &str) -> bool {
             .strip_prefix(&format!("{tool}.config."))
             .is_some_and(|extension| !extension.is_empty() && !extension.contains('.'))
     })
+}
+
+fn has_supported_segment(segments: &[&str], name: &str) -> bool {
+    segments.iter().enumerate().any(|(index, segment)| {
+        *segment == name
+            && (index == 0
+                || segments[index - 1] == "src"
+                || is_package_root_segment(segments, index))
+    })
+}
+
+fn is_package_root_segment(segments: &[&str], index: usize) -> bool {
+    index >= 2 && matches!(segments[index - 2], "packages" | "apps")
+}
+
+fn matches_file_stem(file_name: &str, stems: &[&str]) -> bool {
+    let Some((stem, _extension)) = split_single_extension(file_name) else {
+        return false;
+    };
+
+    stems.iter().any(|candidate| *candidate == stem)
+}
+
+fn has_extension(file_name: &str) -> bool {
+    file_name
+        .rsplit_once('.')
+        .is_some_and(|(stem, extension)| !stem.is_empty() && !extension.is_empty())
+}
+
+fn split_single_extension(file_name: &str) -> Option<(&str, &str)> {
+    let (stem, extension) = file_name.rsplit_once('.')?;
+
+    if extension.is_empty() || extension.contains('.') || stem.contains('.') {
+        return None;
+    }
+
+    Some((stem, extension))
 }
 
 fn is_framework_entry(relative_path: &str) -> bool {

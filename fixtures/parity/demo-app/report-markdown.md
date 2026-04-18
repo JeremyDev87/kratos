@@ -12,6 +12,7 @@
 - Orphan files: 2
 - Dead exports: 3
 - Unused imports: 0
+- Route entrypoints: 1
 - Deletion candidates: 2
 
 ## Broken imports
@@ -32,6 +33,10 @@
 ## Unused imports
 
 - None
+
+## Route entrypoints
+
+- <ROOT>/pages/home.tsx (next-pages-route)
 
 ## Deletion candidates
 

@@ -8,7 +8,7 @@ use crate::discover::collect_source_files;
 use crate::entrypoints::detect_entrypoint_kind;
 use crate::error::KratosResult;
 use crate::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, ExportRecord,
+    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportRecord,
     ImportSpecifierKind, ImportUsageRecord, ModuleRecord, OrphanFileFinding, OrphanKind,
     ProjectConfig, ReportV2, ResolvedImportRecord, RouteEntrypointFinding, UnusedImportFinding,
 };
@@ -165,13 +165,19 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         }
 
         let export_usage = summarize_export_usage(module);
-        let should_skip_dead_exports = module.entrypoint_kind.is_some()
+        let should_skip_dead_exports = should_skip_dead_exports(module.entrypoint_kind.as_ref())
             || export_usage.uses_namespace
             || export_usage.uses_unknown;
 
         if !should_skip_dead_exports {
             for exported in &module.exports {
-                if exported.name == "*" || export_usage.used_names.contains(&exported.name) {
+                if exported.name == "*"
+                    || export_usage.used_names.contains(&exported.name)
+                    || is_framework_consumed_export(
+                        module.entrypoint_kind.as_ref(),
+                        exported.name.as_str(),
+                    )
+                {
                     continue;
                 }
 
@@ -270,10 +276,7 @@ fn classify_orphan(relative_path: &str) -> OrphanClassification {
         };
     }
 
-    if normalized.contains("/routes/")
-        || file_name.to_ascii_lowercase().contains("page")
-        || file_name.to_ascii_lowercase().contains("route")
-    {
+    if normalized.contains("/routes/") || is_route_like_file_name(file_name) {
         return OrphanClassification {
             kind: OrphanKind::RouteModule,
             reason: "Route-like module is not connected to any router entry.".to_string(),
@@ -286,6 +289,73 @@ fn classify_orphan(relative_path: &str) -> OrphanClassification {
         reason: "Module has no inbound references and is not treated as an entrypoint.".to_string(),
         confidence: 0.88,
     }
+}
+
+fn should_skip_dead_exports(entrypoint_kind: Option<&EntrypointKind>) -> bool {
+    matches!(
+        entrypoint_kind,
+        Some(
+            EntrypointKind::UserEntry
+                | EntrypointKind::PackageEntry
+                | EntrypointKind::AppEntry
+                | EntrypointKind::ToolingEntry
+                | EntrypointKind::FrameworkEntry
+        )
+    )
+}
+
+fn is_framework_consumed_export(
+    entrypoint_kind: Option<&EntrypointKind>,
+    export_name: &str,
+) -> bool {
+    match entrypoint_kind {
+        Some(EntrypointKind::NextAppRoute) => matches!(
+            export_name,
+            "default"
+                | "metadata"
+                | "generateMetadata"
+                | "generateImageMetadata"
+                | "generateSitemaps"
+                | "viewport"
+                | "generateViewport"
+                | "generateStaticParams"
+                | "revalidate"
+                | "dynamic"
+                | "dynamicParams"
+                | "fetchCache"
+                | "runtime"
+                | "preferredRegion"
+                | "maxDuration"
+                | "GET"
+                | "POST"
+                | "PUT"
+                | "PATCH"
+                | "DELETE"
+                | "HEAD"
+                | "OPTIONS"
+        ),
+        Some(EntrypointKind::NextPagesRoute) => matches!(
+            export_name,
+            "default"
+                | "config"
+                | "getInitialProps"
+                | "getStaticProps"
+                | "getStaticPaths"
+                | "getServerSideProps"
+        ),
+        _ => false,
+    }
+}
+
+fn is_route_like_file_name(file_name: &str) -> bool {
+    let base_name = file_name
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(file_name);
+
+    base_name
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|token| token.eq_ignore_ascii_case("page") || token.eq_ignore_ascii_case("route"))
 }
 
 fn push_unique_path(paths: &mut Vec<std::path::PathBuf>, path: std::path::PathBuf) {
@@ -349,4 +419,62 @@ struct OrphanClassification {
     kind: OrphanKind,
     reason: String,
     confidence: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_orphan, is_framework_consumed_export, should_skip_dead_exports};
+    use crate::model::{EntrypointKind, OrphanKind};
+
+    #[test]
+    fn classify_orphan_avoids_route_false_positives_from_substrings() {
+        assert_eq!(
+            classify_orphan("src/lib/package.ts").kind,
+            OrphanKind::Module
+        );
+        assert_eq!(
+            classify_orphan("src/lib/router.ts").kind,
+            OrphanKind::Module
+        );
+        assert_eq!(
+            classify_orphan("src/routes/account.ts").kind,
+            OrphanKind::RouteModule
+        );
+        assert_eq!(
+            classify_orphan("src/features/user.page.tsx").kind,
+            OrphanKind::RouteModule
+        );
+    }
+
+    #[test]
+    fn next_route_entrypoints_only_skip_framework_consumed_exports() {
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "generateMetadata"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "generateImageMetadata"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "generateSitemaps"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextPagesRoute),
+            "getStaticProps"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextPagesRoute),
+            "getInitialProps"
+        ));
+        assert!(!is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "helper"
+        ));
+        assert!(!should_skip_dead_exports(Some(
+            &EntrypointKind::NextAppRoute
+        )));
+        assert!(should_skip_dead_exports(Some(&EntrypointKind::AppEntry)));
+    }
 }
