@@ -69,7 +69,10 @@ fn load_project_config_parses_comments_and_collects_entries() {
         .ignored_directories
         .iter()
         .any(|entry| entry == "custom-cache"));
-    assert_eq!(config.explicit_entries, vec![project.root().join("src/main.ts")]);
+    assert_eq!(
+        config.explicit_entries,
+        vec![project.root().join("src/main.ts")]
+    );
     assert_eq!(config.path_aliases[0].alias, "@deep/*");
     assert_eq!(config.path_aliases[1].alias, "@/*");
     assert!(config
@@ -88,7 +91,9 @@ fn load_project_config_parses_comments_and_collects_entries() {
         .package_entries
         .contains(&project.root().join("dist/cli.js")));
     assert!(
-        !config.package_entries.contains(&project.root().to_path_buf()),
+        !config
+            .package_entries
+            .contains(&project.root().to_path_buf()),
         "empty export targets should be ignored"
     );
 }
@@ -156,11 +161,17 @@ fn resolve_import_target_uses_paths_base_url_and_directory_fallbacks() {
 
     let exact_alias = resolve_import_target("@cfg", &importer, &config).expect("exact alias");
     assert_eq!(exact_alias.kind, ImportResolutionKind::Source);
-    assert_eq!(exact_alias.path, Some(project.root().join("src/config/index.ts")));
+    assert_eq!(
+        exact_alias.path,
+        Some(project.root().join("src/config/index.ts"))
+    );
 
     let base_url = resolve_import_target("shared", &importer, &config).expect("baseUrl resolves");
     assert_eq!(base_url.kind, ImportResolutionKind::Source);
-    assert_eq!(base_url.path, Some(project.root().join("src/shared/index.ts")));
+    assert_eq!(
+        base_url.path,
+        Some(project.root().join("src/shared/index.ts"))
+    );
 
     let middle_wildcard =
         resolve_import_target("@view/home", &importer, &config).expect("middle wildcard");
@@ -178,7 +189,10 @@ fn resolve_import_target_uses_paths_base_url_and_directory_fallbacks() {
     let root_relative =
         resolve_import_target("/lib/root-entry", &importer, &config).expect("root relative");
     assert_eq!(root_relative.kind, ImportResolutionKind::Source);
-    assert_eq!(root_relative.path, Some(project.root().join("lib/root-entry.ts")));
+    assert_eq!(
+        root_relative.path,
+        Some(project.root().join("lib/root-entry.ts"))
+    );
 
     let builtin = resolve_import_target("node:path", &importer, &config).expect("builtin");
     assert_eq!(builtin.kind, ImportResolutionKind::External);
@@ -225,7 +239,10 @@ fn resolve_import_target_preserves_same_length_alias_insertion_order() {
     let resolution =
         resolve_import_target("@foobar", &importer, &config).expect("alias should resolve");
     assert_eq!(resolution.kind, ImportResolutionKind::Source);
-    assert_eq!(resolution.path, Some(project.root().join("src/preferred/bar.ts")));
+    assert_eq!(
+        resolution.path,
+        Some(project.root().join("src/preferred/bar.ts"))
+    );
 }
 
 #[test]
@@ -254,12 +271,18 @@ fn resolve_import_target_honors_wildcard_alias_suffix() {
     let preferred =
         resolve_import_target("@fooquxbaz", &importer, &config).expect("suffix alias resolves");
     assert_eq!(preferred.kind, ImportResolutionKind::Source);
-    assert_eq!(preferred.path, Some(project.root().join("src/preferred/qux.ts")));
+    assert_eq!(
+        preferred.path,
+        Some(project.root().join("src/preferred/qux.ts"))
+    );
 
     let fallback =
         resolve_import_target("@fooquxbar", &importer, &config).expect("suffix alias resolves");
     assert_eq!(fallback.kind, ImportResolutionKind::Source);
-    assert_eq!(fallback.path, Some(project.root().join("src/fallback/qux.ts")));
+    assert_eq!(
+        fallback.path,
+        Some(project.root().join("src/fallback/qux.ts"))
+    );
 
     let missing =
         resolve_import_target("@fooquxnope", &importer, &config).expect("suffix mismatch");
@@ -312,7 +335,10 @@ fn load_project_config_normalizes_relative_root_for_discovery_and_resolution() {
     let root_relative =
         resolve_import_target("/app/root-entry", &importer, &config).expect("root relative");
     assert_eq!(root_relative.kind, ImportResolutionKind::Source);
-    assert_eq!(root_relative.path, Some(project.root().join("app/root-entry.ts")));
+    assert_eq!(
+        root_relative.path,
+        Some(project.root().join("app/root-entry.ts"))
+    );
 }
 
 #[test]
@@ -334,7 +360,10 @@ fn load_project_config_normalizes_dot_segments_in_base_url_and_alias_targets() {
     let config = load_project_config(project.root()).expect("config should load");
     assert_eq!(config.base_url, Some(project.root().join("src")));
     assert_eq!(config.path_aliases.len(), 1);
-    assert_eq!(config.path_aliases[0].target, project.root().join("src/shared"));
+    assert_eq!(
+        config.path_aliases[0].target,
+        project.root().join("src/shared")
+    );
 }
 
 #[test]
@@ -369,8 +398,8 @@ fn resolve_import_target_accepts_relative_importer_paths() {
 
 #[test]
 fn parse_loose_json_rejects_control_characters_and_supports_surrogate_pairs() {
-    let parsed = parse_loose_json(r#"{ "emoji": "\uD83D\uDE00" }"#)
-        .expect("surrogate pair should parse");
+    let parsed =
+        parse_loose_json(r#"{ "emoji": "\uD83D\uDE00" }"#).expect("surrogate pair should parse");
     let emoji = parsed
         .get("emoji")
         .and_then(JsonValue::as_str)
@@ -386,8 +415,8 @@ fn parse_loose_json_rejects_control_characters_and_supports_surrogate_pairs() {
         "unexpected error: {invalid}"
     );
 
-    let leading_zero = parse_loose_json(r#"{"count":01}"#)
-        .expect_err("leading-zero numbers should be rejected");
+    let leading_zero =
+        parse_loose_json(r#"{"count":01}"#).expect_err("leading-zero numbers should be rejected");
     assert!(
         leading_zero
             .to_string()
@@ -502,7 +531,8 @@ fn load_project_config_rejects_non_string_array_items() {
 "#,
     );
 
-    let config = load_project_config(project.root()).expect("non-array alias targets should be ignored");
+    let config =
+        load_project_config(project.root()).expect("non-array alias targets should be ignored");
     assert!(config.path_aliases.is_empty());
 }
 

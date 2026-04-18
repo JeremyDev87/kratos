@@ -43,7 +43,11 @@ pub fn format_root_help() -> String {
 }
 
 pub fn format_command_help(spec: CommandSpec) -> String {
-    let mut lines = vec![format!("kratos {}", spec.name), spec.summary.to_string(), String::new()];
+    let mut lines = vec![
+        format!("kratos {}", spec.name),
+        spec.summary.to_string(),
+        String::new(),
+    ];
 
     for usage in spec.usage {
         lines.push(format!("Usage: {usage}"));
