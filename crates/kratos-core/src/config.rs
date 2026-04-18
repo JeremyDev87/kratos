@@ -57,6 +57,7 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
 
     Ok(ProjectConfig {
         root: root.clone(),
+        config_path: None,
         base_url: base_url.clone(),
         roots: normalize_roots(&root, user_config.get("roots"))?,
         ignored_directories: normalize_ignored_directories(user_config.get("ignore")),

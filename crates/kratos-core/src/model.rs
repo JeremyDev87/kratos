@@ -5,6 +5,7 @@ pub const REPORT_V2: u32 = 2;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectConfig {
     pub root: PathBuf,
+    pub config_path: Option<PathBuf>,
     pub base_url: Option<PathBuf>,
     pub roots: Vec<PathBuf>,
     pub ignored_directories: Vec<String>,
@@ -18,6 +19,7 @@ impl ProjectConfig {
         Self {
             roots: vec![root.clone()],
             root,
+            config_path: None,
             base_url: None,
             ignored_directories: Vec::new(),
             explicit_entries: Vec::new(),
@@ -184,6 +186,7 @@ pub struct ReportV2 {
     pub version: u32,
     pub generated_at: Option<String>,
     pub root: PathBuf,
+    pub config_path: Option<PathBuf>,
     pub summary: SummaryCounts,
     pub findings: FindingSet,
     pub modules: Vec<ModuleRecord>,
@@ -204,6 +207,7 @@ impl Default for ReportV2 {
             version: REPORT_V2,
             generated_at: None,
             root: PathBuf::new(),
+            config_path: None,
             summary: SummaryCounts::default(),
             findings: FindingSet::default(),
             modules: Vec::new(),

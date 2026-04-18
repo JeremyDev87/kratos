@@ -66,16 +66,17 @@ fn is_next_app_route(relative_path: &str) -> bool {
         return false;
     }
 
-    let file_name = relative_path
-        .rsplit('/')
-        .next()
-        .unwrap_or(relative_path)
-        .split('.')
-        .next()
-        .unwrap_or_default();
+    let file_name = relative_path.rsplit('/').next().unwrap_or(relative_path);
+    let Some((stem, extension)) = file_name.rsplit_once('.') else {
+        return false;
+    };
+
+    if extension.is_empty() || extension.contains('.') || stem.contains('.') {
+        return false;
+    }
 
     matches!(
-        file_name,
+        stem,
         "page" | "route" | "layout" | "loading" | "error" | "not-found"
     )
 }
@@ -95,9 +96,33 @@ mod tests {
             .expect("entrypoint detection should succeed");
         let nested = detect_entrypoint_kind(&root.join("app/home/page.tsx"), &config)
             .expect("entrypoint detection should succeed");
+        let nested_test = detect_entrypoint_kind(&root.join("app/home/page.test.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let nested_spec =
+            detect_entrypoint_kind(&root.join("app/home/not-found.spec.tsx"), &config)
+                .expect("entrypoint detection should succeed");
 
         assert_eq!(root_level, None);
         assert_eq!(nested, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(nested_test, None);
+        assert_eq!(nested_spec, None);
+    }
+
+    #[test]
+    fn tooling_entry_requires_single_extension_suffix() {
+        let root = PathBuf::from("/tmp/kratos-entrypoints");
+        let config = ProjectConfig::new(root.clone());
+
+        let real_config = detect_entrypoint_kind(&root.join("next.config.js"), &config)
+            .expect("entrypoint detection should succeed");
+        let test_config = detect_entrypoint_kind(&root.join("next.config.test.ts"), &config)
+            .expect("entrypoint detection should succeed");
+        let backup_config = detect_entrypoint_kind(&root.join("vite.config.backup.js"), &config)
+            .expect("entrypoint detection should succeed");
+
+        assert_eq!(real_config, Some(EntrypointKind::ToolingEntry));
+        assert_eq!(test_config, None);
+        assert_eq!(backup_config, None);
     }
 }
 
@@ -191,7 +216,11 @@ fn is_tooling_entry(relative_path: &str) -> bool {
         "cypress",
     ]
     .iter()
-    .any(|tool| file_name.starts_with(&format!("{tool}.config.")))
+    .any(|tool| {
+        file_name
+            .strip_prefix(&format!("{tool}.config."))
+            .is_some_and(|extension| !extension.is_empty() && !extension.contains('.'))
+    })
 }
 
 fn is_framework_entry(relative_path: &str) -> bool {
