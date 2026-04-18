@@ -61,18 +61,11 @@ pub fn parse_report_json(raw: &str) -> KratosResult<ReportV2> {
         .ok_or_else(|| KratosError::Json("Report is missing schemaVersion/version".to_string()))?
         as u32;
 
-    let project = value.get("project");
-    let root = project
-        .and_then(|project| project.get("root"))
-        .or_else(|| value.get("root"))
-        .and_then(Value::as_str)
-        .ok_or_else(|| KratosError::Json("Report is missing root".to_string()))?;
-    let config_path = project
-        .and_then(|project| project.get("configPath"))
-        .and_then(Value::as_str)
-        .map(Into::into);
+    let generated_at =
+        read_optional_string(Some(&value), "generatedAt", "generatedAt")?.map(str::to_string);
 
-    let (summary, finding_set, modules) = if version == REPORT_V2 {
+    let (root, config_path, summary, finding_set, modules) = if version == REPORT_V2 {
+        let project = read_required_object(value.get("project"), "project")?;
         let summary =
             parse_required_summary(read_required_object(value.get("summary"), "summary")?)?;
         let findings = read_required_object(value.get("findings"), "findings")?;
@@ -82,6 +75,9 @@ pub fn parse_report_json(raw: &str) -> KratosResult<ReportV2> {
         )?;
 
         (
+            read_required_string(project, "root", "project.root")?,
+            read_optional_string(value.get("project"), "configPath", "project.configPath")?
+                .map(Into::into),
             summary,
             crate::model::FindingSet {
                 broken_imports: parse_required_broken_imports(read_required_array(
@@ -117,8 +113,15 @@ pub fn parse_report_json(raw: &str) -> KratosResult<ReportV2> {
             .get("graph")
             .and_then(|graph| graph.get("modules"))
             .or_else(|| value.get("modules"));
+        let project = value.get("project");
 
         (
+            project
+                .and_then(|project| project.get("root"))
+                .or_else(|| value.get("root"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| KratosError::Json("Report is missing root".to_string()))?,
+            read_optional_string(project, "configPath", "project.configPath")?.map(Into::into),
             parse_summary(value.get("summary")),
             crate::model::FindingSet {
                 broken_imports: parse_broken_imports(
@@ -141,11 +144,12 @@ pub fn parse_report_json(raw: &str) -> KratosResult<ReportV2> {
     };
 
     Ok(ReportV2 {
-        version,
-        generated_at: value
-            .get("generatedAt")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        version: if version < REPORT_V2 {
+            REPORT_V2
+        } else {
+            version
+        },
+        generated_at,
         root: root.into(),
         config_path,
         summary,
@@ -166,6 +170,7 @@ pub fn format_summary_report(report: &ReportV2, report_path: &Path) -> KratosRes
         format!("Orphan files: {}", report.summary.orphan_files),
         format!("Dead exports: {}", report.summary.dead_exports),
         format!("Unused imports: {}", report.summary.unused_imports),
+        format!("Route entrypoints: {}", report.summary.route_entrypoints),
         format!(
             "Deletion candidates: {}",
             report.summary.deletion_candidates
@@ -192,6 +197,18 @@ pub fn format_summary_report(report: &ReportV2, report_path: &Path) -> KratosRes
         &report.findings.dead_exports,
         |item| format!("{}#{}", path_to_string(&item.file), item.export_name),
     );
+    append_preview(
+        &mut lines,
+        "Route entrypoints",
+        &report.findings.route_entrypoints,
+        |item| {
+            format!(
+                "{} ({})",
+                path_to_string(&item.file),
+                entrypoint_kind_to_string(&item.kind)
+            )
+        },
+    );
 
     Ok(lines.join("\n"))
 }
@@ -217,6 +234,7 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
         format!("- Orphan files: {}", report.summary.orphan_files),
         format!("- Dead exports: {}", report.summary.dead_exports),
         format!("- Unused imports: {}", report.summary.unused_imports),
+        format!("- Route entrypoints: {}", report.summary.route_entrypoints),
         format!(
             "- Deletion candidates: {}",
             report.summary.deletion_candidates
@@ -252,6 +270,18 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
                 path_to_string(&item.file),
                 item.local,
                 item.source
+            )
+        },
+    );
+    push_markdown_section(
+        &mut lines,
+        "Route entrypoints",
+        &report.findings.route_entrypoints,
+        |item| {
+            format!(
+                "{} ({})",
+                path_to_string(&item.file),
+                entrypoint_kind_to_string(&item.kind)
             )
         },
     );
@@ -393,7 +423,7 @@ fn parse_broken_imports(value: Option<&Value>) -> Vec<BrokenImportFinding> {
                 kind: item
                     .get("kind")
                     .and_then(Value::as_str)
-                    .map(parse_import_kind)
+                    .and_then(parse_import_kind)
                     .unwrap_or(ImportKind::Unknown),
             })
         })
@@ -407,11 +437,6 @@ fn parse_required_broken_imports(values: &[Value]) -> KratosResult<Vec<BrokenImp
         .map(|(index, item)| {
             let object =
                 read_required_object(Some(item), &format!("findings.brokenImports[{index}]"))?;
-            let kind = read_required_string(
-                object,
-                "kind",
-                &format!("findings.brokenImports[{index}].kind"),
-            )?;
 
             Ok(BrokenImportFinding {
                 file: read_required_string(
@@ -426,7 +451,11 @@ fn parse_required_broken_imports(values: &[Value]) -> KratosResult<Vec<BrokenImp
                     &format!("findings.brokenImports[{index}].source"),
                 )?
                 .to_string(),
-                kind: parse_import_kind(kind),
+                kind: read_required_import_kind(
+                    object,
+                    "kind",
+                    &format!("findings.brokenImports[{index}].kind"),
+                )?,
             })
         })
         .collect()
@@ -441,7 +470,7 @@ fn parse_orphan_files(value: Option<&Value>) -> Vec<OrphanFileFinding> {
                 kind: item
                     .get("kind")
                     .and_then(Value::as_str)
-                    .map(parse_orphan_kind)
+                    .and_then(parse_orphan_kind)
                     .unwrap_or(OrphanKind::Module),
                 reason: item
                     .get("reason")
@@ -464,11 +493,6 @@ fn parse_required_orphan_files(values: &[Value]) -> KratosResult<Vec<OrphanFileF
         .map(|(index, item)| {
             let object =
                 read_required_object(Some(item), &format!("findings.orphanFiles[{index}]"))?;
-            let kind = read_required_string(
-                object,
-                "kind",
-                &format!("findings.orphanFiles[{index}].kind"),
-            )?;
 
             Ok(OrphanFileFinding {
                 file: read_required_string(
@@ -477,7 +501,11 @@ fn parse_required_orphan_files(values: &[Value]) -> KratosResult<Vec<OrphanFileF
                     &format!("findings.orphanFiles[{index}].file"),
                 )?
                 .into(),
-                kind: parse_orphan_kind(kind),
+                kind: read_required_orphan_kind(
+                    object,
+                    "kind",
+                    &format!("findings.orphanFiles[{index}].kind"),
+                )?,
                 reason: read_required_string(
                     object,
                     "reason",
@@ -875,24 +903,26 @@ fn parse_entrypoint_kind(value: &str) -> Option<EntrypointKind> {
     }
 }
 
-fn parse_import_kind(value: &str) -> ImportKind {
+fn parse_import_kind(value: &str) -> Option<ImportKind> {
     match value {
-        "static" => ImportKind::Static,
-        "side-effect" => ImportKind::SideEffect,
-        "reexport" => ImportKind::Reexport,
-        "reexport-all" => ImportKind::ReexportAll,
-        "reexport-namespace" => ImportKind::ReexportNamespace,
-        "require" => ImportKind::Require,
-        "dynamic" => ImportKind::Dynamic,
-        _ => ImportKind::Unknown,
+        "static" => Some(ImportKind::Static),
+        "side-effect" => Some(ImportKind::SideEffect),
+        "reexport" => Some(ImportKind::Reexport),
+        "reexport-all" => Some(ImportKind::ReexportAll),
+        "reexport-namespace" => Some(ImportKind::ReexportNamespace),
+        "require" => Some(ImportKind::Require),
+        "dynamic" => Some(ImportKind::Dynamic),
+        "unknown" => Some(ImportKind::Unknown),
+        _ => None,
     }
 }
 
-fn parse_orphan_kind(value: &str) -> OrphanKind {
+fn parse_orphan_kind(value: &str) -> Option<OrphanKind> {
     match value {
-        "orphan-component" => OrphanKind::Component,
-        "orphan-route-module" => OrphanKind::RouteModule,
-        _ => OrphanKind::Module,
+        "orphan-component" => Some(OrphanKind::Component),
+        "orphan-route-module" => Some(OrphanKind::RouteModule),
+        "orphan-module" => Some(OrphanKind::Module),
+        _ => None,
     }
 }
 
@@ -932,6 +962,24 @@ fn read_required_string<'a>(
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| KratosError::Json(format!("Report is missing required string `{path}`")))
+}
+
+fn read_optional_string<'a>(
+    value: Option<&'a Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<Option<&'a str>> {
+    let Some(object) = value.and_then(Value::as_object) else {
+        return Ok(None);
+    };
+
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(string)) => Ok(Some(string)),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid string field `{path}`"
+        ))),
+    }
 }
 
 fn read_required_usize(
@@ -976,6 +1024,26 @@ fn read_required_entrypoint_kind(
     let raw = read_required_string(value, key, path)?;
     parse_entrypoint_kind(raw)
         .ok_or_else(|| KratosError::Json(format!("Report has invalid entrypoint kind `{path}`")))
+}
+
+fn read_required_import_kind(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<ImportKind> {
+    let raw = read_required_string(value, key, path)?;
+    parse_import_kind(raw)
+        .ok_or_else(|| KratosError::Json(format!("Report has invalid import kind `{path}`")))
+}
+
+fn read_required_orphan_kind(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<OrphanKind> {
+    let raw = read_required_string(value, key, path)?;
+    parse_orphan_kind(raw)
+        .ok_or_else(|| KratosError::Json(format!("Report has invalid orphan kind `{path}`")))
 }
 
 fn read_optional_entrypoint_kind(

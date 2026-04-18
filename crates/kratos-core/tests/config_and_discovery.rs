@@ -205,6 +205,323 @@ fn resolve_import_target_uses_paths_base_url_and_directory_fallbacks() {
     let missing = resolve_import_target("./missing", &importer, &config).expect("missing");
     assert_eq!(missing.kind, ImportResolutionKind::MissingInternal);
     assert_eq!(missing.path, None);
+
+    let missing_base_url =
+        resolve_import_target("shared/missing", &importer, &config).expect("missing baseUrl");
+    assert_eq!(missing_base_url.kind, ImportResolutionKind::MissingInternal);
+    assert_eq!(missing_base_url.path, None);
+}
+
+#[test]
+fn resolve_import_target_keeps_declared_external_packages_external() {
+    let project = TestProject::new("declared-external-packages");
+    project.write(
+        "package.json",
+        r#"{
+  "dependencies": {
+    "react": "^18.0.0",
+    "@scope/pkg": "^1.0.0"
+  }
+}
+"#,
+    );
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/react/index.ts", "export const fakeReact = true;\n");
+    project.write(
+        "src/@scope/pkg/index.ts",
+        "export const fakeScoped = true;\n",
+    );
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    assert!(config.external_packages.contains("react"));
+    assert!(config.external_packages.contains("@scope/pkg"));
+
+    let react =
+        resolve_import_target("react/jsx-runtime", &importer, &config).expect("react resolves");
+    assert_eq!(react.kind, ImportResolutionKind::External);
+    assert_eq!(react.path, None);
+
+    let scoped =
+        resolve_import_target("@scope/pkg/runtime", &importer, &config).expect("scope resolves");
+    assert_eq!(scoped.kind, ImportResolutionKind::External);
+    assert_eq!(scoped.path, None);
+}
+
+#[test]
+fn resolve_import_target_marks_file_backed_base_url_subpaths_as_missing_internal() {
+    let project = TestProject::new("file-backed-baseurl");
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/helpers.ts", "export const FLAG = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    let missing =
+        resolve_import_target("helpers/foo", &importer, &config).expect("missing subpath");
+    assert_eq!(missing.kind, ImportResolutionKind::MissingInternal);
+    assert_eq!(missing.path, None);
+}
+
+#[test]
+fn resolve_import_target_marks_directory_backed_base_url_subpaths_as_missing_internal() {
+    let project = TestProject::new("directory-backed-baseurl");
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/shared/placeholder.txt", "shadow directory\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    let missing =
+        resolve_import_target("shared/missing", &importer, &config).expect("missing subpath");
+    assert_eq!(missing.kind, ImportResolutionKind::MissingInternal);
+    assert_eq!(missing.path, None);
+}
+
+#[test]
+fn resolve_import_target_marks_base_url_misses_without_internal_signal_as_missing_internal() {
+    let project = TestProject::new("baseurl-miss-without-signal");
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    let missing = resolve_import_target("utils/missing", &importer, &config).expect("missing");
+    assert_eq!(missing.kind, ImportResolutionKind::MissingInternal);
+    assert_eq!(missing.path, None);
+}
+
+#[test]
+fn resolve_import_target_keeps_node_builtins_external_with_base_url() {
+    let project = TestProject::new("builtin-baseurl");
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    let fs = resolve_import_target("fs", &importer, &config).expect("fs should stay external");
+    assert_eq!(fs.kind, ImportResolutionKind::External);
+    assert_eq!(fs.path, None);
+
+    let path =
+        resolve_import_target("path/posix", &importer, &config).expect("path should stay external");
+    assert_eq!(path.kind, ImportResolutionKind::External);
+    assert_eq!(path.path, None);
+}
+
+#[test]
+fn resolve_import_target_allows_base_url_to_shadow_node_builtins() {
+    let project = TestProject::new("shadow-builtin");
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/fs.ts", "export const shadowed = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    let resolution = resolve_import_target("fs", &importer, &config).expect("fs should resolve");
+    assert_eq!(resolution.kind, ImportResolutionKind::Source);
+    assert_eq!(resolution.path, Some(project.root().join("src/fs.ts")));
+}
+
+#[test]
+fn resolve_import_target_allows_base_url_files_to_shadow_declared_packages() {
+    let project = TestProject::new("shadowed-dependency");
+    project.write(
+        "package.json",
+        r#"{
+  "dependencies": {
+    "react": "^18.0.0"
+  }
+}
+"#,
+    );
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write("src/app/main.ts", "export const main = true;\n");
+    project.write("src/react.ts", "export const shadowed = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("src/app/main.ts");
+
+    let resolution = resolve_import_target("react", &importer, &config).expect("react resolves");
+    assert_eq!(resolution.kind, ImportResolutionKind::Source);
+    assert_eq!(resolution.path, Some(project.root().join("src/react.ts")));
+}
+
+#[test]
+fn resolve_import_target_uses_nested_package_dependencies_for_base_url_misses() {
+    let project = TestProject::new("nested-package-dependencies");
+    project.write(
+        "tsconfig.json",
+        r#"{
+  "compilerOptions": {
+    "baseUrl": "src"
+  }
+}
+"#,
+    );
+    project.write(
+        "packages/ui/package.json",
+        r#"{
+  "dependencies": {
+    "react": "^18.0.0",
+    "@scope/pkg": "^1.0.0"
+  }
+}
+"#,
+    );
+    project.write("packages/ui/src/app/main.ts", "export const main = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let importer = project.root().join("packages/ui/src/app/main.ts");
+
+    let react =
+        resolve_import_target("react/jsx-runtime", &importer, &config).expect("react resolves");
+    assert_eq!(react.kind, ImportResolutionKind::External);
+    assert_eq!(react.path, None);
+
+    let scoped =
+        resolve_import_target("@scope/pkg/runtime", &importer, &config).expect("scope resolves");
+    assert_eq!(scoped.kind, ImportResolutionKind::External);
+    assert_eq!(scoped.path, None);
+}
+
+#[test]
+fn load_project_config_resolves_extensionless_and_directory_package_entries() {
+    let project = TestProject::new("package-entry-resolution");
+    project.write(
+        "package.json",
+        r#"{
+  "main": "./src/index",
+  "bin": "./src/cli",
+  "exports": {
+    ".": "./src/routes"
+  }
+}
+"#,
+    );
+    project.write("src/index.ts", "export const main = true;\n");
+    project.write("src/cli.ts", "export const cli = true;\n");
+    project.write("src/routes/index.ts", "export const route = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+
+    assert!(config
+        .package_entries
+        .contains(&project.root().join("src/index.ts")));
+    assert!(config
+        .package_entries
+        .contains(&project.root().join("src/cli.ts")));
+    assert!(config
+        .package_entries
+        .contains(&project.root().join("src/routes/index.ts")));
+}
+
+#[test]
+fn load_project_config_prefers_declaration_files_for_types_entries() {
+    let project = TestProject::new("types-entry-resolution");
+    project.write(
+        "package.json",
+        r#"{
+  "types": "./dist/index",
+  "exports": {
+    ".": {
+      "types": "./dist/types"
+    }
+  }
+}
+"#,
+    );
+    project.write("dist/index.ts", "export const runtime = true;\n");
+    project.write("dist/index.d.ts", "export declare const runtime: true;\n");
+    project.write("dist/types.ts", "export const typesRuntime = true;\n");
+    project.write(
+        "dist/types.d.ts",
+        "export declare const typesRuntime: true;\n",
+    );
+
+    let config = load_project_config(project.root()).expect("config should load");
+
+    assert!(config
+        .package_entries
+        .contains(&project.root().join("dist/index.d.ts")));
+    assert!(config
+        .package_entries
+        .contains(&project.root().join("dist/types.d.ts")));
+    assert!(
+        !config
+            .package_entries
+            .contains(&project.root().join("dist/index.ts")),
+        "types entry should not prefer runtime source files over declarations"
+    );
+    assert!(
+        !config
+            .package_entries
+            .contains(&project.root().join("dist/types.ts")),
+        "exports.types should not prefer runtime source files over declarations"
+    );
 }
 
 #[test]
@@ -286,7 +603,7 @@ fn resolve_import_target_honors_wildcard_alias_suffix() {
 
     let missing =
         resolve_import_target("@fooquxnope", &importer, &config).expect("suffix mismatch");
-    assert_eq!(missing.kind, ImportResolutionKind::External);
+    assert_eq!(missing.kind, ImportResolutionKind::MissingInternal);
     assert_eq!(missing.path, None);
 }
 

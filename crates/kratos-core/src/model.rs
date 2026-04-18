@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 pub const REPORT_V2: u32 = 2;
@@ -12,6 +13,7 @@ pub struct ProjectConfig {
     pub explicit_entries: Vec<PathBuf>,
     pub package_entries: Vec<PathBuf>,
     pub path_aliases: Vec<PathAlias>,
+    pub external_packages: BTreeSet<String>,
 }
 
 impl ProjectConfig {
@@ -25,6 +27,7 @@ impl ProjectConfig {
             explicit_entries: Vec::new(),
             package_entries: Vec::new(),
             path_aliases: Vec::new(),
+            external_packages: BTreeSet::new(),
         }
     }
 }

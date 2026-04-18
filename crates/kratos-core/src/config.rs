@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::KratosResult;
@@ -6,6 +7,12 @@ use crate::jsonc::{parse_loose_json, JsonValue};
 use crate::model::{PathAlias, ProjectConfig};
 
 const DEFAULT_CONFIG_FILENAME: &str = "kratos.config.json";
+const PACKAGE_ENTRY_EXTENSIONS: &[&str] = &[
+    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts",
+];
+const PACKAGE_TYPE_ENTRY_EXTENSIONS: &[&str] = &[
+    ".d.ts", ".d.mts", ".d.cts", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs",
+];
 const DEFAULT_IGNORED_DIRS: &[&str] = &[
     ".git",
     ".next",
@@ -68,6 +75,7 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
             compiler_options.and_then(|value| value.get("paths")),
             base_url.as_deref(),
         )?,
+        external_packages: collect_external_packages(&package_json),
     })
 }
 
@@ -172,56 +180,143 @@ fn normalize_path_aliases(
 fn collect_package_entry_files(root: &Path, package_json: &JsonValue) -> Vec<PathBuf> {
     let mut entries = Vec::new();
 
-    add_entry_value(&mut entries, root, package_json.get("main"));
-    add_entry_value(&mut entries, root, package_json.get("module"));
-    add_entry_value(&mut entries, root, package_json.get("types"));
+    add_entry_value(&mut entries, root, package_json.get("main"), false);
+    add_entry_value(&mut entries, root, package_json.get("module"), false);
+    add_entry_value(&mut entries, root, package_json.get("types"), true);
 
     if let Some(bin) = package_json.get("bin") {
-        if let Some(value) = bin.as_str() {
-            push_unique_path(&mut entries, resolve_path(root, value));
+        if bin.as_str().is_some() {
+            add_entry_value(&mut entries, root, Some(bin), false);
         } else if let Some(values) = bin.as_object() {
             for value in values.values() {
-                add_entry_value(&mut entries, root, Some(value));
+                add_entry_value(&mut entries, root, Some(value), false);
             }
         }
     }
 
     if let Some(exports) = package_json.get("exports") {
-        collect_exports(&mut entries, root, exports);
+        collect_exports(&mut entries, root, exports, false);
     }
 
     entries
 }
 
-fn collect_exports(entries: &mut Vec<PathBuf>, root: &Path, value: &JsonValue) {
+fn collect_external_packages(package_json: &JsonValue) -> BTreeSet<String> {
+    let mut packages = BTreeSet::new();
+
+    collect_dependency_names(&mut packages, package_json.get("dependencies"));
+    collect_dependency_names(&mut packages, package_json.get("devDependencies"));
+    collect_dependency_names(&mut packages, package_json.get("peerDependencies"));
+    collect_dependency_names(&mut packages, package_json.get("optionalDependencies"));
+
+    packages
+}
+
+fn collect_dependency_names(packages: &mut BTreeSet<String>, value: Option<&JsonValue>) {
+    let Some(entries) = value.and_then(JsonValue::as_object) else {
+        return;
+    };
+
+    for (name, _) in entries.iter() {
+        packages.insert(name.clone());
+    }
+}
+
+fn collect_exports(
+    entries: &mut Vec<PathBuf>,
+    root: &Path,
+    value: &JsonValue,
+    prefer_declaration_files: bool,
+) {
     match value {
         JsonValue::String(path) => {
             if path.is_empty() {
                 return;
             }
 
-            push_unique_path(entries, resolve_path(root, path))
+            let resolved = resolve_package_entry_path(root, path, prefer_declaration_files)
+                .unwrap_or_else(|| resolve_path(root, path));
+            push_unique_path(entries, resolved)
         }
         JsonValue::Array(values) => {
             for nested in values {
-                collect_exports(entries, root, nested);
+                collect_exports(entries, root, nested, prefer_declaration_files);
             }
         }
         JsonValue::Object(values) => {
-            for nested in values.values() {
-                collect_exports(entries, root, nested);
+            for (key, nested) in values.iter() {
+                collect_exports(
+                    entries,
+                    root,
+                    nested,
+                    prefer_declaration_files || key == "types",
+                );
             }
         }
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) => {}
     }
 }
 
-fn add_entry_value(entries: &mut Vec<PathBuf>, root: &Path, value: Option<&JsonValue>) {
+fn add_entry_value(
+    entries: &mut Vec<PathBuf>,
+    root: &Path,
+    value: Option<&JsonValue>,
+    prefer_declaration_files: bool,
+) {
     let Some(value) = value.and_then(JsonValue::as_str) else {
         return;
     };
 
-    push_unique_path(entries, resolve_path(root, value));
+    let resolved = resolve_package_entry_path(root, value, prefer_declaration_files)
+        .unwrap_or_else(|| resolve_path(root, value));
+    push_unique_path(entries, resolved);
+}
+
+fn resolve_package_entry_path(
+    root: &Path,
+    value: &str,
+    prefer_declaration_files: bool,
+) -> Option<PathBuf> {
+    let resolved = resolve_path(root, value);
+    let extensions = package_entry_extensions(prefer_declaration_files);
+
+    if resolved.exists() {
+        if resolved.is_dir() {
+            return resolve_package_entry_directory(&resolved, extensions);
+        }
+
+        return Some(resolved);
+    }
+
+    if resolved.extension().is_none() {
+        for extension in extensions {
+            let candidate = PathBuf::from(format!("{}{}", resolved.to_string_lossy(), extension));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_package_entry_directory(directory: &Path, extensions: &[&str]) -> Option<PathBuf> {
+    for extension in extensions {
+        let candidate = directory.join(format!("index{extension}"));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+fn package_entry_extensions(prefer_declaration_files: bool) -> &'static [&'static str] {
+    if prefer_declaration_files {
+        PACKAGE_TYPE_ENTRY_EXTENSIONS
+    } else {
+        PACKAGE_ENTRY_EXTENSIONS
+    }
 }
 
 fn extract_string_array(value: Option<&JsonValue>) -> Vec<String> {

@@ -221,6 +221,258 @@ fn report_v2_rejects_truncated_required_sections() {
 }
 
 #[test]
+fn report_v2_rejects_invalid_metadata_field_types() {
+    let invalid_generated_at = r#"{
+      "schemaVersion": 2,
+      "generatedAt": true,
+      "project": {
+        "root": "/tmp/kratos",
+        "configPath": null
+      },
+      "summary": {
+        "filesScanned": 0,
+        "entrypoints": 0,
+        "brokenImports": 0,
+        "orphanFiles": 0,
+        "deadExports": 0,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": []
+      }
+    }"#;
+    let invalid_config_path = r#"{
+      "schemaVersion": 2,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "project": {
+        "root": "/tmp/kratos",
+        "configPath": { "bad": true }
+      },
+      "summary": {
+        "filesScanned": 0,
+        "entrypoints": 0,
+        "brokenImports": 0,
+        "orphanFiles": 0,
+        "deadExports": 0,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": []
+      }
+    }"#;
+
+    let generated_at_error =
+        parse_report_json(invalid_generated_at).expect_err("invalid generatedAt should fail");
+    let config_path_error =
+        parse_report_json(invalid_config_path).expect_err("invalid configPath should fail");
+
+    assert!(
+        generated_at_error.to_string().contains("generatedAt"),
+        "expected generatedAt error, got: {generated_at_error}"
+    );
+    assert!(
+        config_path_error.to_string().contains("project.configPath"),
+        "expected configPath error, got: {config_path_error}"
+    );
+}
+
+#[test]
+fn report_v2_rejects_invalid_required_enum_values() {
+    let invalid_import_kind = r#"{
+      "schemaVersion": 2,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "project": {
+        "root": "/tmp/kratos",
+        "configPath": null
+      },
+      "summary": {
+        "filesScanned": 0,
+        "entrypoints": 0,
+        "brokenImports": 1,
+        "orphanFiles": 0,
+        "deadExports": 0,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [
+          {
+            "file": "/tmp/kratos/src/main.ts",
+            "source": "shared/missing",
+            "kind": "bogus"
+          }
+        ],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": []
+      }
+    }"#;
+    let invalid_orphan_kind = r#"{
+      "schemaVersion": 2,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "project": {
+        "root": "/tmp/kratos",
+        "configPath": null
+      },
+      "summary": {
+        "filesScanned": 0,
+        "entrypoints": 0,
+        "brokenImports": 0,
+        "orphanFiles": 1,
+        "deadExports": 0,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [
+          {
+            "file": "/tmp/kratos/src/package.ts",
+            "kind": "bogus",
+            "reason": "bad",
+            "confidence": 0.5
+          }
+        ],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": []
+      }
+    }"#;
+
+    let import_error =
+        parse_report_json(invalid_import_kind).expect_err("invalid import kind should fail");
+    let orphan_error =
+        parse_report_json(invalid_orphan_kind).expect_err("invalid orphan kind should fail");
+
+    assert!(
+        import_error
+            .to_string()
+            .contains("findings.brokenImports[0].kind"),
+        "expected broken import kind error, got: {import_error}"
+    );
+    assert!(
+        orphan_error
+            .to_string()
+            .contains("findings.orphanFiles[0].kind"),
+        "expected orphan kind error, got: {orphan_error}"
+    );
+}
+
+#[test]
+fn legacy_report_parses_into_renderable_v2_report() {
+    let legacy_report = r#"{
+      "version": 1,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "root": "/tmp/kratos",
+      "summary": {
+        "filesScanned": 1,
+        "entrypoints": 1,
+        "brokenImports": 0,
+        "orphanFiles": 0,
+        "deadExports": 0,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "modules": [
+        {
+          "file": "/tmp/kratos/src/main.ts",
+          "relativePath": "src/main.ts",
+          "entrypointKind": "app-entry",
+          "importedByCount": 0,
+          "importCount": 0,
+          "exportCount": 0
+        }
+      ]
+    }"#;
+
+    let parsed = parse_report_json(legacy_report).expect("legacy report should parse");
+    let report_path = Path::new("/tmp/kratos/.kratos/latest-report.json");
+
+    assert_eq!(parsed.version, 2);
+    validate_report_version(&parsed).expect("legacy report should be canonicalized to v2");
+    serialize_report_pretty(&parsed).expect("legacy report should serialize");
+    format_summary_report(&parsed, report_path).expect("legacy report should format as summary");
+    format_markdown_report(&parsed, report_path).expect("legacy report should format as markdown");
+}
+
+#[test]
+fn report_v2_requires_project_root_field() {
+    let invalid_root_shape = r#"{
+      "schemaVersion": 2,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "root": "/tmp/kratos",
+      "summary": {
+        "filesScanned": 0,
+        "entrypoints": 0,
+        "brokenImports": 0,
+        "orphanFiles": 0,
+        "deadExports": 0,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": []
+      }
+    }"#;
+
+    let error = parse_report_json(invalid_root_shape)
+        .expect_err("v2 reports without project.root should fail");
+    assert!(
+        error.to_string().contains("project"),
+        "expected project root error, got: {error}"
+    );
+}
+
+#[test]
 fn report_v2_preserves_non_null_config_path() {
     let repo_root = repo_root();
     let demo_root = repo_root.join("fixtures/demo-app");
