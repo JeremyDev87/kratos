@@ -1,5 +1,6 @@
-use kratos_core::{KratosError, KratosResult};
+use napi_derive::napi;
 
-pub fn run_cli(_args: Vec<String>) -> KratosResult<i32> {
-    Err(KratosError::not_implemented("kratos-node::run_cli"))
+#[napi(js_name = "runCli")]
+pub fn run_cli(args: Vec<String>) -> i32 {
+    kratos_cli::run_cli(&args)
 }
