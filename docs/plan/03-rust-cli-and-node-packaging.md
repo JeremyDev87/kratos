@@ -23,7 +23,8 @@
 - `PR 5A`는 `crates/kratos-node/**/*`, `bin/kratos.js`, `test/npm-launcher.test.js`를 수정한다.
 - `PR 5A`에서 NAPI wrapper가 CLI 로직을 재사용하기 위해 필요한 최소 범위의 `crates/kratos-cli/src/lib.rs` 추출과 `crates/kratos-cli/src/main.rs` thin-wrapper 변경은 허용한다.
 - `PR 5B`는 `PR 5A`가 merge되어 addon package name과 target 매핑이 고정된 뒤에만 시작한다.
-- `PR 5B`는 workflow 파일만 수정한다. `package.json`은 `PR 6A`까지 건드리지 않는다.
+- `PR 5C`는 `PR 5B`가 merge되어 release lane이 정리된 뒤에만 시작한다.
+- `PR 5B`와 `PR 5C`는 workflow 파일만 수정한다. `package.json`은 `PR 6A`까지 건드리지 않는다.
 - unknown command/help/error wording은 현재 JS CLI와 최대한 동일한 읽기 경험을 유지한다.
 
 ## PR 4A. Rust CLI For Scan Report Clean
@@ -130,6 +131,38 @@
   - Rust workspace test
   - target build matrix
   - npm smoke install
+
+## PR 5C. Addon npm Publish Lane Before Root Cutover
+
+### Target Files
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+
+### Steps
+
+1. `PR 5A`에서 고정한 addon package name과 target 매핑으로 platform addon npm package tarball을 만든다.
+2. CI의 native packaging matrix는 raw native archive smoke에 더해 addon npm tarball을 실제 install/require 해 본다.
+3. release workflow는 target build job에서 addon npm tarball을 artifact로 업로드한다.
+4. release workflow에 별도 addon publish job을 추가하되 기존 verify gate 뒤에서 addon package를 먼저 publish하고, 그 다음 root package publish가 진행되게 만든다.
+5. rerun-safe하게 동작하도록 addon publish도 npm lookup/publish error classifier를 재사용한다.
+6. GitHub Release asset에는 raw native archive, addon npm tarball, root npm tarball을 함께 첨부한다.
+
+### Behavior Constraints
+
+- addon publish lane은 `PR 5B` 산출물 위에서만 확장한다. naming source of truth를 새로 만들지 않는다.
+- addon npm package는 각 target의 `os`/`cpu` 제한과 `kratos.node` payload만 포함한다.
+- addon publish job은 `verify-node`, `verify-rust`, target build 성공 뒤에만 진행된다.
+- release workflow에서 root package publish는 addon publish 성공 또는 already-published 판정 뒤에만 진행한다.
+- 이 PR도 `package.json`은 수정하지 않는다.
+
+### Validation
+
+- CI dry-run 관점에서 아래 경로가 모두 실행 가능해야 한다.
+  - raw native archive smoke
+  - addon npm tarball pack
+  - addon npm tarball install/require smoke
+  - addon publish before root publish
 
 ## Done Criteria
 

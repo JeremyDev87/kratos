@@ -115,30 +115,40 @@ jobs:
           - runner: macos-14
             platform: darwin
             arch: arm64
+            node_os: darwin
+            node_cpu: arm64
             target: aarch64-apple-darwin
             os_family: macos
             built_library: target/aarch64-apple-darwin/release/libkratos_node.dylib
           - runner: macos-15-intel
             platform: darwin
             arch: x64
+            node_os: darwin
+            node_cpu: x64
             target: x86_64-apple-darwin
             os_family: macos
             built_library: target/x86_64-apple-darwin/release/libkratos_node.dylib
           - runner: ubuntu-latest
             platform: linux
             arch: x64
+            node_os: linux
+            node_cpu: x64
             target: x86_64-unknown-linux-gnu
             os_family: linux
             built_library: target/x86_64-unknown-linux-gnu/release/libkratos_node.so
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+            node_os: linux
+            node_cpu: arm64
             target: aarch64-unknown-linux-gnu
             os_family: linux
             built_library: target/aarch64-unknown-linux-gnu/release/libkratos_node.so
           - runner: windows-latest
             platform: win32
             arch: x64
+            node_os: win32
+            node_cpu: x64
             target: x86_64-pc-windows-msvc
             os_family: windows
             built_library: target/x86_64-pc-windows-msvc/release/kratos_node.dll
@@ -182,7 +192,7 @@ jobs:
       - name: Package native addon artifact
         shell: bash
         run: |
-          staging_dir="dist/${{ steps.addon.outputs.package_slug }}"
+          staging_dir="dist/native/${{ steps.addon.outputs.package_slug }}"
           mkdir -p "$staging_dir"
 
           cp "${{ matrix.built_library }}" "$staging_dir/kratos.node"
@@ -205,12 +215,226 @@ jobs:
 
           node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "$extract_dir/kratos.node"
 
+      - name: Stage addon npm package
+        shell: bash
+        env:
+          PACKAGE_DIR: dist/npm/${{ steps.addon.outputs.package_slug }}
+          PACKAGE_NAME: ${{ steps.addon.outputs.package_name }}
+          PACKAGE_VERSION: ${{ needs.resolve.outputs.version }}
+          PACKAGE_OS: ${{ matrix.node_os }}
+          PACKAGE_CPU: ${{ matrix.node_cpu }}
+        run: |
+          mkdir -p "$PACKAGE_DIR"
+          cp "${{ matrix.built_library }}" "$PACKAGE_DIR/kratos.node"
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const packageJsonPath = `${process.env.PACKAGE_DIR}/package.json`;
+          const pkg = {
+            name: process.env.PACKAGE_NAME,
+            version: process.env.PACKAGE_VERSION,
+            description: `Prebuilt native addon for ${process.env.PACKAGE_NAME}.`,
+            license: "MIT",
+            homepage: "https://github.com/JeremyDev87/kratos#readme",
+            repository: {
+              type: "git",
+              url: "git+https://github.com/JeremyDev87/kratos.git",
+            },
+            main: "./kratos.node",
+            files: ["kratos.node"],
+            os: [process.env.PACKAGE_OS],
+            cpu: [process.env.PACKAGE_CPU],
+            engines: {
+              node: ">=18",
+            },
+            publishConfig: {
+              access: "public",
+            },
+          };
+
+          fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + "\n");
+          NODE
+
+      - name: Pack addon npm package
+        id: addon_pack
+        shell: bash
+        env:
+          PACKAGE_DIR: dist/npm/${{ steps.addon.outputs.package_slug }}
+        run: |
+          mkdir -p dist/npm-tarballs
+          tarball=$(npm pack "$PACKAGE_DIR" --pack-destination dist/npm-tarballs --cache ./.npm-cache)
+          echo "tarball=dist/npm-tarballs/$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke addon npm package
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d)
+          tarball_path="$GITHUB_WORKSPACE/${{ steps.addon_pack.outputs.tarball }}"
+
+          if command -v cygpath >/dev/null 2>&1; then
+            tarball_path=$(cygpath -m "$tarball_path")
+          fi
+
+          pushd "$smoke_dir" >/dev/null
+          npm init -y >/dev/null 2>&1
+          npm install "$tarball_path" --cache "$GITHUB_WORKSPACE/.npm-cache" --no-package-lock >/dev/null
+          node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "${{ steps.addon.outputs.package_name }}"
+          popd >/dev/null
+
       - name: Upload native addon artifact
         uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.target }}
           path: ${{ steps.addon.outputs.archive_name }}
           if-no-files-found: error
+
+      - name: Upload addon npm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: addon-npm-${{ matrix.target }}
+          path: ${{ steps.addon_pack.outputs.tarball }}
+          if-no-files-found: error
+
+  publish-addon-packages:
+    name: Publish Addon Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - resolve
+      - verify-node
+      - build-native-artifacts
+    env:
+      NPM_CONFIG_CACHE: .npm-cache
+
+    steps:
+      - name: Checkout tagged release ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Download addon npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: addon-npm-*
+          path: addon-packages
+          merge-multiple: true
+
+      - name: Detect npm auth mode
+        id: auth
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "mode=token" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=trusted" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish addon packages with trusted publishing
+        if: ${{ steps.auth.outputs.mode == 'trusted' }}
+        shell: bash
+        env:
+          NPM_DIST_TAG: ${{ needs.resolve.outputs.npmDistTag }}
+        run: |
+          shopt -s nullglob
+          tarballs=(addon-packages/*.tgz)
+
+          if [ "${#tarballs[@]}" -eq 0 ]; then
+            echo "No addon npm tarballs were downloaded."
+            exit 1
+          fi
+
+          for tarball in "${tarballs[@]}"; do
+            metadata_file=$(mktemp addon-package-XXXXXX.json)
+            tar -xOf "$tarball" package/package.json > "$metadata_file"
+
+            package_name=$(node --input-type=module -e "import fs from 'node:fs'; const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(pkg.name);" "$metadata_file")
+            package_version=$(node --input-type=module -e "import fs from 'node:fs'; const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(pkg.version);" "$metadata_file")
+
+            rm -f "$metadata_file"
+
+            if npm view "${package_name}@${package_version}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
+              echo "Addon package ${package_name}@${package_version} already published, skipping."
+              continue
+            fi
+
+            lookup_state=$(node ./scripts/classify-npm-lookup-error.mjs /tmp/npm-view-error.txt)
+            if [ "$lookup_state" != "not-found" ]; then
+              cat /tmp/npm-view-error.txt
+              exit 1
+            fi
+
+            if npm publish "$tarball" --access public --tag "$NPM_DIST_TAG" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+              echo "Published ${package_name}@${package_version}"
+              continue
+            fi
+
+            publish_state=$(node ./scripts/classify-npm-publish-error.mjs /tmp/npm-publish-error.txt)
+            if [ "$publish_state" = "already-published" ]; then
+              echo "Addon package ${package_name}@${package_version} was already published during a rerun, continuing."
+            else
+              cat /tmp/npm-publish-error.txt
+              exit 1
+            fi
+          done
+
+      - name: Publish addon packages with token fallback
+        if: ${{ steps.auth.outputs.mode == 'token' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_DIST_TAG: ${{ needs.resolve.outputs.npmDistTag }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          tarballs=(addon-packages/*.tgz)
+
+          if [ "${#tarballs[@]}" -eq 0 ]; then
+            echo "No addon npm tarballs were downloaded."
+            exit 1
+          fi
+
+          for tarball in "${tarballs[@]}"; do
+            metadata_file=$(mktemp addon-package-XXXXXX.json)
+            tar -xOf "$tarball" package/package.json > "$metadata_file"
+
+            package_name=$(node --input-type=module -e "import fs from 'node:fs'; const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(pkg.name);" "$metadata_file")
+            package_version=$(node --input-type=module -e "import fs from 'node:fs'; const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(pkg.version);" "$metadata_file")
+
+            rm -f "$metadata_file"
+
+            if npm view "${package_name}@${package_version}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
+              echo "Addon package ${package_name}@${package_version} already published, skipping."
+              continue
+            fi
+
+            lookup_state=$(node ./scripts/classify-npm-lookup-error.mjs /tmp/npm-view-error.txt)
+            if [ "$lookup_state" != "not-found" ]; then
+              cat /tmp/npm-view-error.txt
+              exit 1
+            fi
+
+            if npm publish "$tarball" --access public --tag "$NPM_DIST_TAG" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+              echo "Published ${package_name}@${package_version}"
+              continue
+            fi
+
+            publish_state=$(node ./scripts/classify-npm-publish-error.mjs /tmp/npm-publish-error.txt)
+            if [ "$publish_state" = "already-published" ]; then
+              echo "Addon package ${package_name}@${package_version} was already published during a rerun, continuing."
+            else
+              cat /tmp/npm-publish-error.txt
+              exit 1
+            fi
+          done
 
   publish-root-package:
     name: Publish Root Package
@@ -220,7 +444,7 @@ jobs:
       - resolve
       - verify-node
       - verify-rust
-      - build-native-artifacts
+      - publish-addon-packages
     env:
       NPM_CONFIG_CACHE: .npm-cache
 
@@ -361,6 +585,7 @@ jobs:
     needs:
       - resolve
       - build-native-artifacts
+      - publish-addon-packages
       - publish-root-package
     env:
       GH_TOKEN: ${{ github.token }}
@@ -376,6 +601,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: native-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download addon npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: addon-npm-*
           path: release-assets
           merge-multiple: true
 
