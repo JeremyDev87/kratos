@@ -103,8 +103,9 @@ test(
   { skip: skipDirectExecutableTests },
   () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kratos-launcher-link-"));
+    const launcherPath = prepareIsolatedLauncher(tempRoot);
     const linkPath = path.join(tempRoot, "kratos.js");
-    fs.symlinkSync(path.join(process.cwd(), "bin/kratos.js"), linkPath, "file");
+    fs.symlinkSync(launcherPath, linkPath, "file");
 
     const result = spawnSync(linkPath, ["scan"], {
       encoding: "utf8",
@@ -119,7 +120,9 @@ test(
   "launcher file executes directly through its shebang",
   { skip: skipDirectExecutableTests },
   () => {
-    const result = spawnSync(path.join(process.cwd(), "bin/kratos.js"), ["scan"], {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kratos-launcher-direct-"));
+    const launcherPath = prepareIsolatedLauncher(tempRoot);
+    const result = spawnSync(launcherPath, ["scan"], {
       encoding: "utf8",
     });
 
@@ -127,6 +130,27 @@ test(
     assert.match(result.stderr, expectedMissingAddonPattern());
   },
 );
+
+function prepareIsolatedLauncher(tempRoot) {
+  const launcherDir = path.join(tempRoot, "bin");
+  const launcherPath = path.join(launcherDir, "kratos.js");
+
+  fs.mkdirSync(launcherDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRoot, "package.json"),
+    JSON.stringify(
+      {
+        type: "module",
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  fs.copyFileSync(path.join(process.cwd(), "bin/kratos.js"), launcherPath);
+  fs.chmodSync(launcherPath, 0o755);
+
+  return launcherPath;
+}
 
 function captureStream() {
   let buffer = "";

@@ -282,6 +282,12 @@ jobs:
           node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "${{ steps.addon.outputs.package_name }}"
           popd >/dev/null
 
+      - name: Smoke root package with current native addon
+        shell: bash
+        env:
+          KRATOS_PACKAGE_SMOKE_NATIVE_LIB: ${{ matrix.built_library }}
+        run: node --test test/package-smoke.test.js
+
       - name: Upload native addon artifact
         uses: actions/upload-artifact@v4
         with:
