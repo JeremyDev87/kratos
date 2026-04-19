@@ -31,9 +31,9 @@ npx kratos clean
 在本地开发时，也可以这样运行：
 
 ```bash
-node ./src/cli.js scan
-node ./src/cli.js report
-node ./src/cli.js clean
+npm run scan -- ./fixtures/demo-app
+npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
+npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
 ## 命令
@@ -82,7 +82,7 @@ node ./src/cli.js clean
 ## 报告示例
 
 ```bash
-$ node ./src/cli.js scan ./fixtures/demo-app
+$ npm run scan -- ./fixtures/demo-app
 Kratos scan complete.
 
 Root: /.../fixtures/demo-app
@@ -121,15 +121,15 @@ Saved report: /.../fixtures/demo-app/.kratos/latest-report.json
 
 ## 发布
 
-Kratos 使用像 `v0.1.0` 这样的语义化版本标签进行发布。
+Kratos 使用像 `v0.2.0-alpha.1` 或 `v1.0.0` 这样的语义化版本标签进行发布。
 
 ```bash
-npm version 0.1.0 --no-git-tag-version
+npm version 0.2.0-alpha.1 --no-git-tag-version
 git add package*.json
-git commit -m "chore: release v0.1.0"
-git tag v0.1.0
+git commit -m "chore: release v0.2.0-alpha.1"
+git tag v0.2.0-alpha.1
 git push origin HEAD
-git push origin v0.1.0
+git push origin v0.2.0-alpha.1
 ```
 
 当标签被推送后，[release workflow](.github/workflows/release.yml) 会执行以下操作：

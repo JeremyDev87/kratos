@@ -31,9 +31,9 @@ npx kratos clean
 For local development, you can also run:
 
 ```bash
-node ./src/cli.js scan
-node ./src/cli.js report
-node ./src/cli.js clean
+npm run scan -- ./fixtures/demo-app
+npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
+npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
 ## Commands
@@ -82,7 +82,7 @@ The default behavior is dry-run. Without `--apply`, no files are deleted.
 ## Report Example
 
 ```bash
-$ node ./src/cli.js scan ./fixtures/demo-app
+$ npm run scan -- ./fixtures/demo-app
 Kratos scan complete.
 
 Root: /.../fixtures/demo-app
@@ -121,15 +121,15 @@ You can optionally add `kratos.config.json`.
 
 ## Releases
 
-Kratos uses semantic version tags such as `v0.1.0` for releases.
+Kratos uses semantic version tags such as `v0.2.0-alpha.1` or `v1.0.0` for releases.
 
 ```bash
-npm version 0.1.0 --no-git-tag-version
+npm version 0.2.0-alpha.1 --no-git-tag-version
 git add package*.json
-git commit -m "chore: release v0.1.0"
-git tag v0.1.0
+git commit -m "chore: release v0.2.0-alpha.1"
+git tag v0.2.0-alpha.1
 git push origin HEAD
-git push origin v0.1.0
+git push origin v0.2.0-alpha.1
 ```
 
 When a tag is pushed, the [release workflow](.github/workflows/release.yml) will:

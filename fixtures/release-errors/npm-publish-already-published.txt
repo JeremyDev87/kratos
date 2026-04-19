@@ -1,0 +1,2 @@
+npm ERR! code E403
+npm ERR! 403 403 Forbidden - PUT https://registry.npmjs.org/kratos - You cannot publish over the previously published versions: 0.2.0-alpha.1.

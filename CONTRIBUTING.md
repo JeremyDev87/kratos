@@ -18,6 +18,7 @@ false positives when the analysis is uncertain.
 
 - Node.js 18+
 - npm 9+
+- Rust stable toolchain
 
 ### Install
 
@@ -30,9 +31,9 @@ npm install
 ```bash
 npm test
 npm run smoke
-node ./src/cli.js scan
-node ./src/cli.js report
-node ./src/cli.js clean
+npm run scan -- ./fixtures/demo-app
+npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
+npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
 ## What We Review For
