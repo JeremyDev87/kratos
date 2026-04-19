@@ -31,9 +31,9 @@ npx kratos clean
 ローカル開発中は、以下のように実行することもできます。
 
 ```bash
-node ./src/cli.js scan
-node ./src/cli.js report
-node ./src/cli.js clean
+npm run scan -- ./fixtures/demo-app
+npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
+npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
 ## コマンド
@@ -82,7 +82,7 @@ node ./src/cli.js clean
 ## レポート例
 
 ```bash
-$ node ./src/cli.js scan ./fixtures/demo-app
+$ npm run scan -- ./fixtures/demo-app
 Kratos scan complete.
 
 Root: /.../fixtures/demo-app
@@ -121,15 +121,15 @@ Saved report: /.../fixtures/demo-app/.kratos/latest-report.json
 
 ## リリース
 
-Kratos は `v0.1.0` のようなセマンティックバージョンタグでリリースします。
+Kratos は `v0.2.0-alpha.1` や `v1.0.0` のようなセマンティックバージョンタグでリリースします。
 
 ```bash
-npm version 0.1.0 --no-git-tag-version
+npm version 0.2.0-alpha.1 --no-git-tag-version
 git add package*.json
-git commit -m "chore: release v0.1.0"
-git tag v0.1.0
+git commit -m "chore: release v0.2.0-alpha.1"
+git tag v0.2.0-alpha.1
 git push origin HEAD
-git push origin v0.1.0
+git push origin v0.2.0-alpha.1
 ```
 
 タグが push されると、[release workflow](.github/workflows/release.yml) が以下を実行します。

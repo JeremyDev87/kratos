@@ -1,11 +1,11 @@
 {
   "name": "kratos",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.1",
   "description": "Destroy dead code ruthlessly.",
   "author": "JeremyDev87",
   "type": "module",
   "files": [
-    "src",
+    "bin",
     "LICENSE",
     "README.md",
     "README.en.md",
@@ -26,16 +26,16 @@
     "url": "https://github.com/sponsors/JeremyDev87"
   },
   "bin": {
-    "kratos": "./src/cli.js"
+    "kratos": "./bin/kratos.js"
   },
   "scripts": {
-    "scan": "node ./src/cli.js scan",
-    "report": "node ./src/cli.js report",
-    "clean": "node ./src/cli.js clean",
-    "smoke": "node ./src/cli.js scan ./fixtures/demo-app && node ./src/cli.js report ./fixtures/demo-app/.kratos/latest-report.json",
-    "test": "node --test",
+    "scan": "cargo run -p kratos-cli -- scan",
+    "report": "cargo run -p kratos-cli -- report",
+    "clean": "cargo run -p kratos-cli -- clean",
+    "smoke": "node --test test/package-smoke.test.js",
+    "test": "node --test test/npm-launcher.test.js test/package-smoke.test.js",
     "pack:check": "npm pack --dry-run --cache ./.npm-cache",
-    "verify": "npm test && npm run smoke && npm run pack:check",
+    "verify": "npm test && npm run pack:check",
     "prepublishOnly": "npm run verify"
   },
   "keywords": [
@@ -46,6 +46,13 @@
     "nextjs",
     "analysis"
   ],
+  "optionalDependencies": {
+    "@kratos/darwin-arm64": "0.2.0-alpha.1",
+    "@kratos/darwin-x64": "0.2.0-alpha.1",
+    "@kratos/linux-x64-gnu": "0.2.0-alpha.1",
+    "@kratos/linux-arm64-gnu": "0.2.0-alpha.1",
+    "@kratos/win32-x64-msvc": "0.2.0-alpha.1"
+  },
   "license": "MIT",
   "publishConfig": {
     "access": "public"

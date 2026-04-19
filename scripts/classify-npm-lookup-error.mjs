@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 
-import { classifyNpmLookupError } from "../src/lib/release.js";
+import { classifyNpmLookupError } from "./lib/release.mjs";
 
 const errorPath = process.argv[2];
 

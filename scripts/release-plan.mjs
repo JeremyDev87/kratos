@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { resolveReleasePlan } from "../src/lib/release.js";
+import { resolveReleasePlan } from "./lib/release.mjs";
 
 const tag = process.argv[2];
 

@@ -191,7 +191,7 @@ fn report_json_pretty_prints_the_parsed_input_shape() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.starts_with("{\n"));
-    assert!(stdout.contains("\n  \"version\": 1,"));
+    assert!(stdout.contains("\n  \"schemaVersion\": 2,"));
     assert!(stdout.contains("\n  \"summary\": {"));
 }
 

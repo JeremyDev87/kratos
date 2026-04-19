@@ -6,7 +6,6 @@ import { spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const cliPath = path.join(repoRoot, "src", "cli.js");
 const parityRoot = path.join(repoRoot, "fixtures", "parity");
 const fixtures = [
   {
@@ -87,7 +86,7 @@ async function captureFixture(fixture) {
 }
 
 function runCli(args) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
+  const result = spawnSync("cargo", ["run", "-p", "kratos-cli", "--", ...args], {
     cwd: repoRoot,
     encoding: "utf8",
   });

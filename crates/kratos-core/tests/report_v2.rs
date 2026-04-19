@@ -110,6 +110,12 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
         &demo_root,
         report.generated_at.as_deref().unwrap_or_default(),
     );
+    let fixture_orphan_files = strip_orphan_confidence(&fixture_value["findings"]["orphanFiles"]);
+    let fixture_modules = fixture_value
+        .get("graph")
+        .and_then(|graph| graph.get("modules"))
+        .cloned()
+        .unwrap_or_else(|| fixture_value["modules"].clone());
 
     assert_eq!(normalized["schemaVersion"], Value::from(2));
     assert_eq!(normalized["generatedAt"], Value::from("<GENERATED_AT>"));
@@ -122,7 +128,7 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
     );
     assert_eq!(
         strip_orphan_confidence(&normalized["findings"]["orphanFiles"]),
-        fixture_value["findings"]["orphanFiles"]
+        fixture_orphan_files
     );
     assert_eq!(
         normalized["findings"]["deadExports"],
@@ -140,7 +146,7 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
         normalized["findings"]["deletionCandidates"],
         fixture_value["findings"]["deletionCandidates"]
     );
-    assert_eq!(normalized["graph"]["modules"], fixture_value["modules"]);
+    assert_eq!(normalized["graph"]["modules"], fixture_modules);
 
     let reparsed_serialized =
         serialize_report_pretty(&parsed).expect("parsed report should serialize again");

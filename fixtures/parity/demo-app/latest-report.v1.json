@@ -1,7 +1,10 @@
 {
-  "version": 1,
+  "schemaVersion": 2,
   "generatedAt": "<GENERATED_AT>",
-  "root": "<ROOT>",
+  "project": {
+    "root": "<ROOT>",
+    "configPath": null
+  },
   "summary": {
     "filesScanned": 5,
     "entrypoints": 1,
@@ -24,12 +27,14 @@
       {
         "file": "<ROOT>/src/components/DeadWidget.tsx",
         "kind": "orphan-component",
-        "reason": "Component-like module has no inbound references."
+        "reason": "Component-like module has no inbound references.",
+        "confidence": 0.92
       },
       {
         "file": "<ROOT>/src/lib/broken.ts",
         "kind": "orphan-module",
-        "reason": "Module has no inbound references and is not treated as an entrypoint."
+        "reason": "Module has no inbound references and is not treated as an entrypoint.",
+        "confidence": 0.88
       }
     ],
     "deadExports": [
@@ -68,46 +73,48 @@
       }
     ]
   },
-  "modules": [
-    {
-      "file": "<ROOT>/pages/home.tsx",
-      "relativePath": "pages/home.tsx",
-      "entrypointKind": "next-pages-route",
-      "importedByCount": 0,
-      "importCount": 2,
-      "exportCount": 1
-    },
-    {
-      "file": "<ROOT>/src/components/DeadWidget.tsx",
-      "relativePath": "src/components/DeadWidget.tsx",
-      "entrypointKind": null,
-      "importedByCount": 0,
-      "importCount": 0,
-      "exportCount": 1
-    },
-    {
-      "file": "<ROOT>/src/components/LiveCard.tsx",
-      "relativePath": "src/components/LiveCard.tsx",
-      "entrypointKind": null,
-      "importedByCount": 1,
-      "importCount": 0,
-      "exportCount": 1
-    },
-    {
-      "file": "<ROOT>/src/lib/broken.ts",
-      "relativePath": "src/lib/broken.ts",
-      "entrypointKind": null,
-      "importedByCount": 0,
-      "importCount": 0,
-      "exportCount": 1
-    },
-    {
-      "file": "<ROOT>/src/lib/math.ts",
-      "relativePath": "src/lib/math.ts",
-      "entrypointKind": null,
-      "importedByCount": 1,
-      "importCount": 0,
-      "exportCount": 2
-    }
-  ]
+  "graph": {
+    "modules": [
+      {
+        "file": "<ROOT>/pages/home.tsx",
+        "relativePath": "pages/home.tsx",
+        "entrypointKind": "next-pages-route",
+        "importedByCount": 0,
+        "importCount": 2,
+        "exportCount": 1
+      },
+      {
+        "file": "<ROOT>/src/components/DeadWidget.tsx",
+        "relativePath": "src/components/DeadWidget.tsx",
+        "entrypointKind": null,
+        "importedByCount": 0,
+        "importCount": 0,
+        "exportCount": 1
+      },
+      {
+        "file": "<ROOT>/src/components/LiveCard.tsx",
+        "relativePath": "src/components/LiveCard.tsx",
+        "entrypointKind": null,
+        "importedByCount": 1,
+        "importCount": 0,
+        "exportCount": 1
+      },
+      {
+        "file": "<ROOT>/src/lib/broken.ts",
+        "relativePath": "src/lib/broken.ts",
+        "entrypointKind": null,
+        "importedByCount": 0,
+        "importCount": 0,
+        "exportCount": 1
+      },
+      {
+        "file": "<ROOT>/src/lib/math.ts",
+        "relativePath": "src/lib/math.ts",
+        "entrypointKind": null,
+        "importedByCount": 1,
+        "importCount": 0,
+        "exportCount": 2
+      }
+    ]
+  }
 }
