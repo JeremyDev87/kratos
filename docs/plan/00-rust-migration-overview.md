@@ -33,7 +33,7 @@ Kratos를 현재의 Node/JS 구현에서 Rust 중심 구현으로 전환한다. 
 - config 파일 이름은 계속 `kratos.config.json`을 사용한다.
 - 현재 JS 구현은 baseline으로 유지하고, cutover 전까지 부분적으로 고치지 않는다.
 - `package.json`은 `PR 6A. Root Package Cutover And JS Runtime Removal` 전까지 건드리지 않고, 이후에는 stable promotion용 `Release Prep 8A. Version-Only Stable Promotion`에서만 다시 수정한다.
-- `.github/workflows/ci.yml`와 `.github/workflows/release.yml`는 `PR 5B. CI And Release Rewrite For Rust Artifacts`만 수정한다.
+- `.github/workflows/ci.yml`와 `.github/workflows/release.yml`는 `PR 5B. CI And Release Rewrite For Rust Artifacts`, `PR 5C. Addon npm Publish Lane Before Root Cutover`만 수정한다.
 - 다국어 README와 `CONTRIBUTING.md`는 `PR 7A. Docs Sync And Alpha Release Readiness` 전까지 수정하지 않는다.
 - Rust crate 구조는 `Cargo.toml` 워크스페이스 + `crates/kratos-core`, `crates/kratos-cli`, `crates/kratos-node`로 고정한다.
 - Rust parser는 `Oxc`로 고정한다. 다른 parser stack으로 갈아타는 작업은 본 계획 범위 밖이다.
@@ -89,6 +89,7 @@ Kratos를 현재의 Node/JS 구현에서 Rust 중심 구현으로 전환한다. 
 
 - `PR 5A. NAPI Wrapper And JS Launcher`
 - `PR 5B. CI And Release Rewrite For Rust Artifacts`
+- `PR 5C. Addon npm Publish Lane Before Root Cutover`
 
 ### Phase 6. Big-Bang Cutover
 

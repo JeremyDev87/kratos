@@ -86,30 +86,40 @@ jobs:
           - runner: macos-14
             platform: darwin
             arch: arm64
+            node_os: darwin
+            node_cpu: arm64
             target: aarch64-apple-darwin
             os_family: macos
             built_library: target/aarch64-apple-darwin/release/libkratos_node.dylib
           - runner: macos-15-intel
             platform: darwin
             arch: x64
+            node_os: darwin
+            node_cpu: x64
             target: x86_64-apple-darwin
             os_family: macos
             built_library: target/x86_64-apple-darwin/release/libkratos_node.dylib
           - runner: ubuntu-latest
             platform: linux
             arch: x64
+            node_os: linux
+            node_cpu: x64
             target: x86_64-unknown-linux-gnu
             os_family: linux
             built_library: target/x86_64-unknown-linux-gnu/release/libkratos_node.so
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+            node_os: linux
+            node_cpu: arm64
             target: aarch64-unknown-linux-gnu
             os_family: linux
             built_library: target/aarch64-unknown-linux-gnu/release/libkratos_node.so
           - runner: windows-latest
             platform: win32
             arch: x64
+            node_os: win32
+            node_cpu: x64
             target: x86_64-pc-windows-msvc
             os_family: windows
             built_library: target/x86_64-pc-windows-msvc/release/kratos_node.dll
@@ -136,11 +146,13 @@ jobs:
           package_name=$(node --input-type=module -e "import { resolveAddonPackageName } from './bin/kratos.js'; console.log(resolveAddonPackageName('${{ matrix.platform }}', '${{ matrix.arch }}'));")
           package_slug=${package_name#@kratos/}
           archive_name="${package_slug}-ci-${{ matrix.target }}.tar.gz"
+          package_version=$(node -p "require('./package.json').version")
 
           {
             echo "package_name=$package_name"
             echo "package_slug=$package_slug"
             echo "archive_name=$archive_name"
+            echo "package_version=$package_version"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build native addon library
@@ -149,7 +161,7 @@ jobs:
       - name: Package native addon archive
         shell: bash
         run: |
-          staging_dir="dist/${{ steps.addon.outputs.package_slug }}"
+          staging_dir="dist/native/${{ steps.addon.outputs.package_slug }}"
           mkdir -p "$staging_dir"
 
           cp "${{ matrix.built_library }}" "$staging_dir/kratos.node"
@@ -171,3 +183,70 @@ jobs:
           test "$(cat "$extract_dir/RELEASE_TAG")" = "ci-smoke"
 
           node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "$extract_dir/kratos.node"
+
+      - name: Stage addon npm package
+        shell: bash
+        env:
+          PACKAGE_DIR: dist/npm/${{ steps.addon.outputs.package_slug }}
+          PACKAGE_NAME: ${{ steps.addon.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.addon.outputs.package_version }}
+          PACKAGE_OS: ${{ matrix.node_os }}
+          PACKAGE_CPU: ${{ matrix.node_cpu }}
+        run: |
+          mkdir -p "$PACKAGE_DIR"
+          cp "${{ matrix.built_library }}" "$PACKAGE_DIR/kratos.node"
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const packageJsonPath = `${process.env.PACKAGE_DIR}/package.json`;
+          const pkg = {
+            name: process.env.PACKAGE_NAME,
+            version: process.env.PACKAGE_VERSION,
+            description: `Prebuilt native addon for ${process.env.PACKAGE_NAME}.`,
+            license: "MIT",
+            homepage: "https://github.com/JeremyDev87/kratos#readme",
+            repository: {
+              type: "git",
+              url: "git+https://github.com/JeremyDev87/kratos.git",
+            },
+            main: "./kratos.node",
+            files: ["kratos.node"],
+            os: [process.env.PACKAGE_OS],
+            cpu: [process.env.PACKAGE_CPU],
+            engines: {
+              node: ">=18",
+            },
+            publishConfig: {
+              access: "public",
+            },
+          };
+
+          fs.writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2) + "\n");
+          NODE
+
+      - name: Pack addon npm package
+        id: addon_pack
+        shell: bash
+        env:
+          PACKAGE_DIR: dist/npm/${{ steps.addon.outputs.package_slug }}
+        run: |
+          mkdir -p dist/npm-tarballs
+          tarball=$(npm pack "$PACKAGE_DIR" --pack-destination dist/npm-tarballs --cache ./.npm-cache)
+          echo "tarball=dist/npm-tarballs/$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke addon npm package
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d)
+          tarball_path="$GITHUB_WORKSPACE/${{ steps.addon_pack.outputs.tarball }}"
+
+          if command -v cygpath >/dev/null 2>&1; then
+            tarball_path=$(cygpath -m "$tarball_path")
+          fi
+
+          pushd "$smoke_dir" >/dev/null
+          npm init -y >/dev/null 2>&1
+          npm install "$tarball_path" --cache "$GITHUB_WORKSPACE/.npm-cache" --no-package-lock >/dev/null
+          node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "${{ steps.addon.outputs.package_name }}"
+          popd >/dev/null
