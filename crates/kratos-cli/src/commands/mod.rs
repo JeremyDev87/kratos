@@ -2,7 +2,11 @@ pub mod clean;
 pub mod report;
 pub mod scan;
 
-use kratos_core::{KratosError, KratosResult};
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use kratos_core::{EntrypointKind, KratosError, KratosResult, ReportV2};
 
 #[derive(Clone, Copy)]
 pub struct CommandSpec {
@@ -12,63 +16,512 @@ pub struct CommandSpec {
 }
 
 pub const COMMANDS: &[CommandSpec] = &[scan::SPEC, report::SPEC, clean::SPEC];
+pub const DEFAULT_REPORT_RELATIVE_PATH: &str = ".kratos/latest-report.json";
 
-pub fn dispatch(command: &str, args: &[String]) -> KratosResult<i32> {
+pub fn dispatch(command: &str, args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     match command {
-        scan::NAME => dispatch_command(scan::SPEC, scan::run, args),
-        report::NAME => dispatch_command(report::SPEC, report::run, args),
-        clean::NAME => dispatch_command(clean::SPEC, clean::run, args),
+        scan::NAME => dispatch_command(scan::SPEC, scan::run, args, stdout),
+        report::NAME => dispatch_command(report::SPEC, report::run, args, stdout),
+        clean::NAME => dispatch_command(clean::SPEC, clean::run, args, stdout),
         _ => Err(KratosError::Config(format!("Unknown command: {command}"))),
     }
 }
 
+pub fn is_known_command(command: &str) -> bool {
+    COMMANDS.iter().any(|entry| entry.name == command)
+}
+
 pub fn format_root_help() -> String {
     let mut lines = vec![
-        "Kratos (Rust preview)".to_string(),
+        "Kratos".to_string(),
         "Destroy dead code ruthlessly.".to_string(),
         String::new(),
         "Usage:".to_string(),
-        "  kratos <command> [options]".to_string(),
-        String::new(),
-        "Commands:".to_string(),
     ];
 
     for command in COMMANDS {
-        lines.push(format!("  {:<7} {}", command.name, command.summary));
+        for usage in command.usage {
+            lines.push(format!("  {usage}"));
+        }
     }
 
-    lines.push(String::new());
-    lines.push("Use `kratos <command> --help` for command details.".to_string());
+    lines.extend([String::new(), "Commands:".to_string()]);
+
+    let max_name_length = COMMANDS
+        .iter()
+        .map(|command| command.name.len())
+        .max()
+        .unwrap_or(0);
+    for command in COMMANDS {
+        lines.push(format!(
+            "  {:<width$}  {}",
+            command.name,
+            command.summary,
+            width = max_name_length
+        ));
+    }
+
     lines.join("\n")
 }
 
 pub fn format_command_help(spec: CommandSpec) -> String {
     let mut lines = vec![
-        format!("kratos {}", spec.name),
+        "Kratos".to_string(),
+        "Destroy dead code ruthlessly.".to_string(),
+        String::new(),
+        format!("{} command", spec.name),
         spec.summary.to_string(),
         String::new(),
+        "Usage:".to_string(),
     ];
 
     for usage in spec.usage {
-        lines.push(format!("Usage: {usage}"));
+        lines.push(format!("  {usage}"));
     }
 
+    lines.push(String::new());
+    lines.push("Run `kratos --help` to see every command.".to_string());
     lines.join("\n")
+}
+
+pub fn format_unknown_command(command: &str) -> String {
+    format!("Unknown command: {command}\n\n{}", format_root_help())
 }
 
 fn dispatch_command(
     spec: CommandSpec,
-    runner: fn(&[String]) -> KratosResult<i32>,
+    runner: fn(&[String], &mut dyn Write) -> KratosResult<i32>,
     args: &[String],
+    stdout: &mut dyn Write,
 ) -> KratosResult<i32> {
     if should_show_help(args) {
-        println!("{}", format_command_help(spec));
+        write_output(stdout, &format_command_help(spec))?;
         return Ok(0);
     }
 
-    runner(args)
+    runner(args, stdout)
 }
 
 fn should_show_help(args: &[String]) -> bool {
     args.iter().any(|arg| arg == "--help") || (args.len() == 1 && args[0] == "-h")
+}
+
+pub fn write_output(stream: &mut dyn Write, content: &str) -> KratosResult<()> {
+    stream.write_all(content.as_bytes())?;
+    if !content.ends_with('\n') {
+        stream.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ParsedCliOptions {
+    pub positionals: Vec<String>,
+    pub flags: BTreeMap<String, ParsedFlagValue>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ParsedFlagValue {
+    Present,
+    Value(String),
+}
+
+pub fn parse_cli_options(
+    args: &[String],
+    value_flags: &[&str],
+    boolean_flags: &[&str],
+) -> ParsedCliOptions {
+    let mut parsed = ParsedCliOptions::default();
+    let mut index = 0;
+
+    while index < args.len() {
+        let token = &args[index];
+
+        if !token.starts_with("--") {
+            parsed.positionals.push(token.clone());
+            index += 1;
+            continue;
+        }
+
+        let without_prefix = &token[2..];
+        let mut segments = without_prefix.splitn(2, '=');
+        let name = segments.next().unwrap_or_default().to_string();
+        let is_boolean_flag = boolean_flags.iter().any(|flag| *flag == name);
+        let expects_value = value_flags.iter().any(|flag| *flag == name);
+
+        if let Some(inline_value) = segments.next() {
+            parsed
+                .flags
+                .insert(name, ParsedFlagValue::Value(inline_value.to_string()));
+            index += 1;
+            continue;
+        }
+
+        if is_boolean_flag {
+            parsed.flags.insert(name, ParsedFlagValue::Present);
+            index += 1;
+            continue;
+        }
+
+        let next = args.get(index + 1);
+        if expects_value {
+            if let Some(next_token) = next {
+                if !next_token.starts_with("--") {
+                    parsed
+                        .flags
+                        .insert(name, ParsedFlagValue::Value(next_token.clone()));
+                    index += 2;
+                    continue;
+                }
+            }
+
+            parsed.flags.insert(name, ParsedFlagValue::Present);
+            index += 1;
+            continue;
+        }
+
+        if let Some(next_token) = next {
+            if !next_token.starts_with("--") {
+                parsed
+                    .flags
+                    .insert(name, ParsedFlagValue::Value(next_token.clone()));
+                index += 2;
+                continue;
+            }
+        }
+
+        parsed.flags.insert(name, ParsedFlagValue::Present);
+        index += 1;
+    }
+
+    parsed
+}
+
+pub fn canonicalize_scan_args(raw_args: &[String]) -> KratosResult<Vec<String>> {
+    let parsed = parse_cli_options(raw_args, &["output"], &["json"]);
+    let mut args = Vec::new();
+
+    if let Some(root) = parsed.positionals.first() {
+        args.push(root.clone());
+    }
+
+    if let Some(value) = parsed.flags.get("output").and_then(flag_value_as_string) {
+        if !value.is_empty() {
+            args.push("--output".to_string());
+            args.push(value.to_string());
+        }
+    } else if matches!(parsed.flags.get("output"), Some(ParsedFlagValue::Present)) {
+        return Err(KratosError::Config(
+            "--output requires a path value".to_string(),
+        ));
+    }
+
+    if is_enabled_boolean_flag(parsed.flags.get("json")) {
+        args.push("--json".to_string());
+    }
+
+    Ok(args)
+}
+
+pub fn canonicalize_report_args(raw_args: &[String]) -> Vec<String> {
+    let parsed = parse_cli_options(raw_args, &["format"], &[]);
+    let mut args = Vec::new();
+
+    if let Some(input) = parsed.positionals.first() {
+        args.push(input.clone());
+    }
+
+    if let Some(value) = parsed.flags.get("format").and_then(flag_value_as_string) {
+        if !value.is_empty() {
+            args.push("--format".to_string());
+            args.push(value.to_string());
+        }
+    }
+
+    args
+}
+
+pub fn canonicalize_clean_args(raw_args: &[String]) -> Vec<String> {
+    let parsed = parse_cli_options(raw_args, &[], &["apply"]);
+    let mut args = Vec::new();
+
+    if let Some(input) = parsed.positionals.first() {
+        args.push(input.clone());
+    }
+
+    if is_enabled_boolean_flag(parsed.flags.get("apply")) {
+        args.push("--apply".to_string());
+    }
+
+    args
+}
+
+pub fn resolve_report_input(input: Option<&str>, cwd: &Path) -> PathBuf {
+    match input {
+        None => normalize_path(cwd.join(DEFAULT_REPORT_RELATIVE_PATH)),
+        Some(raw) => {
+            let absolute = resolve_input_path(cwd, raw);
+            if absolute.to_string_lossy().ends_with(".json") {
+                absolute
+            } else {
+                normalize_path(absolute.join(DEFAULT_REPORT_RELATIVE_PATH))
+            }
+        }
+    }
+}
+
+pub fn resolve_input_path(base: &Path, input: &str) -> PathBuf {
+    let path = Path::new(input);
+    if path.is_absolute() {
+        normalize_path(path.to_path_buf())
+    } else {
+        normalize_path(base.join(path))
+    }
+}
+
+pub fn format_summary_report(report: &ReportV2, report_path: &Path, title: &str) -> String {
+    let mut lines = vec![
+        title.to_string(),
+        String::new(),
+        format!("Root: {}", path_to_string(&report.root)),
+        format!("Files scanned: {}", report.summary.files_scanned),
+        format!("Entrypoints: {}", report.summary.entrypoints),
+        format!("Broken imports: {}", report.summary.broken_imports),
+        format!("Orphan files: {}", report.summary.orphan_files),
+        format!("Dead exports: {}", report.summary.dead_exports),
+        format!("Unused imports: {}", report.summary.unused_imports),
+        format!("Route entrypoints: {}", report.summary.route_entrypoints),
+        format!(
+            "Deletion candidates: {}",
+            report.summary.deletion_candidates
+        ),
+        String::new(),
+        format!("Saved report: {}", path_to_string(report_path)),
+    ];
+
+    append_preview(
+        &mut lines,
+        "Broken imports",
+        &report.findings.broken_imports,
+        |item| format!("{} -> {}", path_to_string(&item.file), item.source),
+    );
+    append_preview(
+        &mut lines,
+        "Orphan files",
+        &report.findings.orphan_files,
+        |item| path_to_string(&item.file),
+    );
+    append_preview(
+        &mut lines,
+        "Dead exports",
+        &report.findings.dead_exports,
+        |item| format!("{}#{}", path_to_string(&item.file), item.export_name),
+    );
+    append_preview(
+        &mut lines,
+        "Route entrypoints",
+        &report.findings.route_entrypoints,
+        |item| {
+            format!(
+                "{} ({})",
+                path_to_string(&item.file),
+                entrypoint_kind_to_string(&item.kind)
+            )
+        },
+    );
+
+    lines.join("\n")
+}
+
+pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> String {
+    let mut lines = vec![
+        "# Kratos Report".to_string(),
+        String::new(),
+        format!(
+            "- Generated: {}",
+            report.generated_at.as_deref().unwrap_or("undefined")
+        ),
+        format!("- Root: {}", path_to_string(&report.root)),
+        format!("- Report: {}", path_to_string(report_path)),
+        String::new(),
+        "## Summary".to_string(),
+        String::new(),
+        format!("- Files scanned: {}", report.summary.files_scanned),
+        format!("- Entrypoints: {}", report.summary.entrypoints),
+        format!("- Broken imports: {}", report.summary.broken_imports),
+        format!("- Orphan files: {}", report.summary.orphan_files),
+        format!("- Dead exports: {}", report.summary.dead_exports),
+        format!("- Unused imports: {}", report.summary.unused_imports),
+        format!("- Route entrypoints: {}", report.summary.route_entrypoints),
+        format!(
+            "- Deletion candidates: {}",
+            report.summary.deletion_candidates
+        ),
+        String::new(),
+    ];
+
+    push_markdown_section(
+        &mut lines,
+        "Broken imports",
+        &report.findings.broken_imports,
+        |item| format!("{} -> `{}`", path_to_string(&item.file), item.source),
+    );
+    push_markdown_section(
+        &mut lines,
+        "Orphan files",
+        &report.findings.orphan_files,
+        |item| format!("{} ({})", path_to_string(&item.file), item.reason),
+    );
+    push_markdown_section(
+        &mut lines,
+        "Dead exports",
+        &report.findings.dead_exports,
+        |item| format!("{} -> `{}`", path_to_string(&item.file), item.export_name),
+    );
+    push_markdown_section(
+        &mut lines,
+        "Unused imports",
+        &report.findings.unused_imports,
+        |item| {
+            format!(
+                "{} -> `{}` from `{}`",
+                path_to_string(&item.file),
+                item.local,
+                item.source
+            )
+        },
+    );
+    push_markdown_section(
+        &mut lines,
+        "Route entrypoints",
+        &report.findings.route_entrypoints,
+        |item| {
+            format!(
+                "{} ({})",
+                path_to_string(&item.file),
+                entrypoint_kind_to_string(&item.kind)
+            )
+        },
+    );
+    push_markdown_section(
+        &mut lines,
+        "Deletion candidates",
+        &report.findings.deletion_candidates,
+        |item| {
+            format!(
+                "{} ({}, confidence {})",
+                path_to_string(&item.file),
+                item.reason,
+                item.confidence
+            )
+        },
+    );
+
+    lines.join("\n")
+}
+
+fn path_to_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn entrypoint_kind_to_string(kind: &EntrypointKind) -> &'static str {
+    match kind {
+        EntrypointKind::UserEntry => "user-entry",
+        EntrypointKind::PackageEntry => "package-entry",
+        EntrypointKind::NextAppRoute => "next-app-route",
+        EntrypointKind::NextPagesRoute => "next-pages-route",
+        EntrypointKind::AppEntry => "app-entry",
+        EntrypointKind::ToolingEntry => "tooling-entry",
+        EntrypointKind::FrameworkEntry => "framework-entry",
+    }
+}
+
+fn append_preview<T>(
+    lines: &mut Vec<String>,
+    label: &str,
+    items: &[T],
+    render: impl Fn(&T) -> String,
+) {
+    if items.is_empty() {
+        return;
+    }
+
+    lines.push(String::new());
+    lines.push(format!("{label}:"));
+
+    for item in items.iter().take(5) {
+        lines.push(format!("- {}", render(item)));
+    }
+
+    if items.len() > 5 {
+        lines.push(format!("- ...and {} more", items.len() - 5));
+    }
+}
+
+fn push_markdown_section<T>(
+    lines: &mut Vec<String>,
+    title: &str,
+    items: &[T],
+    render: impl Fn(&T) -> String,
+) {
+    lines.push(format!("## {title}"));
+    lines.push(String::new());
+
+    if items.is_empty() {
+        lines.push("- None".to_string());
+        lines.push(String::new());
+        return;
+    }
+
+    for item in items {
+        lines.push(format!("- {}", render(item)));
+    }
+
+    lines.push(String::new());
+}
+
+fn normalize_path(path: PathBuf) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            std::path::Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            std::path::Component::RootDir => normalized.push(component.as_os_str()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                let can_pop = matches!(
+                    normalized.components().next_back(),
+                    Some(std::path::Component::Normal(_))
+                );
+
+                if can_pop {
+                    normalized.pop();
+                } else {
+                    normalized.push("..");
+                }
+            }
+            std::path::Component::Normal(segment) => normalized.push(segment),
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
+}
+
+fn flag_value_as_string(value: &ParsedFlagValue) -> Option<&str> {
+    match value {
+        ParsedFlagValue::Present => None,
+        ParsedFlagValue::Value(raw) => Some(raw.as_str()),
+    }
+}
+
+fn is_enabled_boolean_flag(value: Option<&ParsedFlagValue>) -> bool {
+    match value {
+        Some(ParsedFlagValue::Present) => true,
+        Some(ParsedFlagValue::Value(raw)) => !raw.is_empty(),
+        None => false,
+    }
 }
