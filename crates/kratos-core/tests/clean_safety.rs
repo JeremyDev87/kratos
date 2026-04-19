@@ -1,0 +1,148 @@
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use kratos_core::clean::{clean_from_report, clean_from_report_path};
+use kratos_core::error::KratosError;
+use kratos_core::model::{DeletionCandidateFinding, ReportV2};
+
+#[test]
+fn clean_rejects_deletion_candidates_outside_report_root() {
+    let temp_root = temp_dir("clean-outside-root");
+    let report_root = temp_root.join("app");
+    let outside_root = temp_root.join("application");
+    let outside_file = outside_root.join("should-not-delete.ts");
+
+    std::fs::create_dir_all(&report_root).expect("report root should exist");
+    std::fs::create_dir_all(&outside_root).expect("outside root should exist");
+    std::fs::write(&outside_file, "export const keep = true;\n").expect("outside file writes");
+
+    let report = report_with_candidate(&report_root, &outside_file);
+    let outcome = clean_from_report(&report, true).expect("clean should succeed");
+
+    assert!(outside_file.exists());
+    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.skipped_files, 1);
+}
+
+#[test]
+fn clean_rejects_symlink_escape_candidates() {
+    let temp_root = temp_dir("clean-symlink-escape");
+    let report_root = temp_root.join("app");
+    let outside_root = temp_root.join("outside");
+    let outside_file = outside_root.join("target.ts");
+    let symlink_path = report_root.join("link");
+
+    std::fs::create_dir_all(&report_root).expect("report root should exist");
+    std::fs::create_dir_all(&outside_root).expect("outside root should exist");
+    std::fs::write(&outside_file, "export const keep = true;\n").expect("outside file writes");
+    symlink_dir(&outside_root, &symlink_path);
+
+    let report = report_with_candidate(&report_root, &symlink_path.join("target.ts"));
+    let outcome = clean_from_report(&report, true).expect("clean should succeed");
+
+    assert!(outside_file.exists());
+    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.skipped_files, 1);
+}
+
+#[test]
+fn clean_allows_symlinked_project_root_and_removes_empty_directories() {
+    let temp_root = temp_dir("clean-symlink-root");
+    let real_root = temp_root.join("real-app");
+    let symlink_root = temp_root.join("linked-app");
+    let nested_dir = real_root.join("orphan");
+    let dead_file = nested_dir.join("dead.ts");
+
+    std::fs::create_dir_all(&nested_dir).expect("nested dir should exist");
+    std::fs::write(&dead_file, "export const dead = true;\n").expect("dead file writes");
+    symlink_dir(&real_root, &symlink_root);
+
+    let report = report_with_candidate(&symlink_root, &symlink_root.join("orphan/dead.ts"));
+    let outcome = clean_from_report(&report, true).expect("clean should succeed");
+
+    assert!(!dead_file.exists());
+    assert!(!nested_dir.exists());
+    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.skipped_files, 0);
+}
+
+#[test]
+fn clean_ignores_cleanup_failures_after_successful_delete() {
+    let temp_root = temp_dir("clean-best-effort-cleanup");
+    let report_root = temp_root.join("app");
+    let real_nested_dir = report_root.join("real-nested");
+    let symlink_nested_dir = report_root.join("symlink-nested");
+    let dead_file = real_nested_dir.join("dead.ts");
+
+    std::fs::create_dir_all(&real_nested_dir).expect("real nested dir should exist");
+    std::fs::write(&dead_file, "export const dead = true;\n").expect("dead file writes");
+    symlink_dir(&real_nested_dir, &symlink_nested_dir);
+
+    let report = report_with_candidate(&report_root, &symlink_nested_dir.join("dead.ts"));
+    let outcome = clean_from_report(&report, true).expect("clean should stay best-effort");
+
+    assert!(!dead_file.exists());
+    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.skipped_files, 0);
+}
+
+#[test]
+fn clean_rejects_invalid_report_version_from_file() {
+    let temp_root = temp_dir("clean-invalid-version");
+    let report_path = temp_root.join("latest-report.json");
+
+    std::fs::create_dir_all(&temp_root).expect("temp root should exist");
+    std::fs::write(
+        &report_path,
+        format!(
+            "{{\"version\":1,\"root\":\"{}\",\"findings\":{{\"deletionCandidates\":[]}}}}",
+            temp_root.display()
+        ),
+    )
+    .expect("report writes");
+
+    let error =
+        clean_from_report_path(&report_path, true).expect_err("v1 reports should be rejected");
+
+    match error {
+        KratosError::InvalidReportVersion { expected, found } => {
+            assert_eq!(expected, 2);
+            assert_eq!(found, 1);
+        }
+        other => panic!("expected invalid report version error, got {other}"),
+    }
+}
+
+fn report_with_candidate(root: &Path, candidate: &Path) -> ReportV2 {
+    let mut report = ReportV2::new(root.to_path_buf());
+    report
+        .findings
+        .deletion_candidates
+        .push(DeletionCandidateFinding {
+            file: candidate.to_path_buf(),
+            reason: "test".to_string(),
+            confidence: 1.0,
+            safe: true,
+        });
+    report
+}
+
+fn temp_dir(label: &str) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be valid")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("kratos-{label}-{unique}"));
+    std::fs::create_dir_all(&path).expect("temp dir should be created");
+    path
+}
+
+#[cfg(unix)]
+fn symlink_dir(target: &Path, link: &Path) {
+    std::os::unix::fs::symlink(target, link).expect("directory symlink should be created");
+}
+
+#[cfg(windows)]
+fn symlink_dir(target: &Path, link: &Path) {
+    std::os::windows::fs::symlink_dir(target, link).expect("directory symlink should be created");
+}
