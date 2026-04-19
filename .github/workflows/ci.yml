@@ -51,3 +51,123 @@ jobs:
 
       - name: Run verification
         run: npm run verify
+
+  rust-workspace:
+    name: Rust Workspace (stable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
+  native-packaging:
+    name: Native Packaging (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    needs: rust-workspace
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            platform: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
+            os_family: macos
+            built_library: target/aarch64-apple-darwin/release/libkratos_node.dylib
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+            target: x86_64-apple-darwin
+            os_family: macos
+            built_library: target/x86_64-apple-darwin/release/libkratos_node.dylib
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x64
+            target: x86_64-unknown-linux-gnu
+            os_family: linux
+            built_library: target/x86_64-unknown-linux-gnu/release/libkratos_node.so
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+            os_family: linux
+            built_library: target/aarch64-unknown-linux-gnu/release/libkratos_node.so
+          - runner: windows-latest
+            platform: win32
+            arch: x64
+            target: x86_64-pc-windows-msvc
+            os_family: windows
+            built_library: target/x86_64-pc-windows-msvc/release/kratos_node.dll
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add release target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Resolve addon package metadata
+        id: addon
+        shell: bash
+        run: |
+          package_name=$(node --input-type=module -e "import { resolveAddonPackageName } from './bin/kratos.js'; console.log(resolveAddonPackageName('${{ matrix.platform }}', '${{ matrix.arch }}'));")
+          package_slug=${package_name#@kratos/}
+          archive_name="${package_slug}-ci-${{ matrix.target }}.tar.gz"
+
+          {
+            echo "package_name=$package_name"
+            echo "package_slug=$package_slug"
+            echo "archive_name=$archive_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build native addon library
+        run: cargo build -p kratos-node --release --target ${{ matrix.target }}
+
+      - name: Package native addon archive
+        shell: bash
+        run: |
+          staging_dir="dist/${{ steps.addon.outputs.package_slug }}"
+          mkdir -p "$staging_dir"
+
+          cp "${{ matrix.built_library }}" "$staging_dir/kratos.node"
+          printf '%s\n' "${{ steps.addon.outputs.package_name }}" > "$staging_dir/PACKAGE_NAME"
+          printf '%s\n' "${{ matrix.target }}" > "$staging_dir/TARGET"
+          printf '%s\n' "ci-smoke" > "$staging_dir/RELEASE_TAG"
+
+          tar -czf "${{ steps.addon.outputs.archive_name }}" -C "$staging_dir" .
+
+      - name: Smoke native addon archive
+        shell: bash
+        run: |
+          extract_dir=$(mktemp -d)
+          tar -xzf "${{ steps.addon.outputs.archive_name }}" -C "$extract_dir"
+
+          test -f "$extract_dir/kratos.node"
+          test "$(cat "$extract_dir/PACKAGE_NAME")" = "${{ steps.addon.outputs.package_name }}"
+          test "$(cat "$extract_dir/TARGET")" = "${{ matrix.target }}"
+          test "$(cat "$extract_dir/RELEASE_TAG")" = "ci-smoke"
+
+          node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "$extract_dir/kratos.node"
