@@ -20,7 +20,8 @@
 ## Rules
 
 - `PR 4A`는 `crates/kratos-cli/**/*`만 수정한다. Node wrapper나 workflow는 같이 건드리지 않는다.
-- `PR 5A`는 `crates/kratos-node/**/*`, `bin/kratos.js`, `test/npm-launcher.test.js`만 수정한다.
+- `PR 5A`는 `crates/kratos-node/**/*`, `bin/kratos.js`, `test/npm-launcher.test.js`를 수정한다.
+- `PR 5A`에서 NAPI wrapper가 CLI 로직을 재사용하기 위해 필요한 최소 범위의 `crates/kratos-cli/src/lib.rs` 추출과 `crates/kratos-cli/src/main.rs` thin-wrapper 변경은 허용한다.
 - `PR 5B`는 `PR 5A`가 merge되어 addon package name과 target 매핑이 고정된 뒤에만 시작한다.
 - `PR 5B`는 workflow 파일만 수정한다. `package.json`은 `PR 6A`까지 건드리지 않는다.
 - unknown command/help/error wording은 현재 JS CLI와 최대한 동일한 읽기 경험을 유지한다.
@@ -67,20 +68,24 @@
 ### Target Files
 
 - `crates/kratos-node/src/lib.rs`
+- `crates/kratos-cli/src/lib.rs`
+- `crates/kratos-cli/src/main.rs`
 - `bin/kratos.js`
 - `test/npm-launcher.test.js`
 
 ### Steps
 
-1. `crates/kratos-node/src/lib.rs`에서 `runCli(args: Vec<String>) -> i32`를 export한다.
-2. native layer는 CLI main logic를 다시 구현하지 않고 `kratos-cli`의 공용 실행 함수만 호출한다.
-3. `bin/kratos.js`는 아래 순서로 동작한다.
+1. `crates/kratos-cli/src/lib.rs`에 `run_cli(args: &[String]) -> i32` 공용 실행 함수를 둔다.
+2. `crates/kratos-cli/src/main.rs`는 argv 수집 후 공용 실행 함수만 호출하는 thin wrapper로 유지한다.
+3. `crates/kratos-node/src/lib.rs`에서 `runCli(args: Vec<String>) -> i32`를 export한다.
+4. native layer는 CLI main logic를 다시 구현하지 않고 `kratos-cli`의 공용 실행 함수만 호출한다.
+5. `bin/kratos.js`는 아래 순서로 동작한다.
    - `process.argv.slice(2)` 수집
    - platform/arch에 맞는 native addon 패키지 resolve
    - `runCli(args)` 호출
    - return value를 `process.exitCode`에 반영
-4. native load 실패나 Rust error는 `Kratos failed: ...` 형식으로 stderr에 출력한다.
-5. addon package name은 아래 형식으로 고정한다.
+6. native load 실패나 Rust error는 `Kratos failed: ...` 형식으로 stderr에 출력한다.
+7. addon package name은 아래 형식으로 고정한다.
    - `@kratos/darwin-arm64`
    - `@kratos/darwin-x64`
    - `@kratos/linux-x64-gnu`

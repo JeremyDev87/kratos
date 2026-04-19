@@ -11,6 +11,11 @@ import {
   runLauncher,
 } from "../bin/kratos.js";
 
+const skipDirectExecutableTests =
+  process.platform === "win32"
+    ? "Windows executes npm bins through generated cmd shims, not JS shebang files."
+    : false;
+
 test("resolveAddonPackageName maps supported targets", () => {
   assert.equal(resolveAddonPackageName("darwin", "arm64"), "@kratos/darwin-arm64");
   assert.equal(resolveAddonPackageName("darwin", "x64"), "@kratos/darwin-x64");
@@ -93,33 +98,35 @@ test("isDirectExecution only matches the active entry file", () => {
   );
 });
 
-test("symlinked launcher execution still enters runLauncher", () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kratos-launcher-link-"));
-  const linkPath = path.join(tempRoot, "kratos.js");
-  fs.symlinkSync(path.join(process.cwd(), "bin/kratos.js"), linkPath, "file");
+test(
+  "symlinked launcher execution still enters runLauncher",
+  { skip: skipDirectExecutableTests },
+  () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "kratos-launcher-link-"));
+    const linkPath = path.join(tempRoot, "kratos.js");
+    fs.symlinkSync(path.join(process.cwd(), "bin/kratos.js"), linkPath, "file");
 
-  const result = spawnSync(linkPath, ["scan"], {
-    encoding: "utf8",
-  });
+    const result = spawnSync(linkPath, ["scan"], {
+      encoding: "utf8",
+    });
 
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stderr,
-    /Kratos failed: Failed to load native addon package @kratos\/darwin-arm64:/,
-  );
-});
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, expectedMissingAddonPattern());
+  },
+);
 
-test("launcher file executes directly through its shebang", () => {
-  const result = spawnSync(path.join(process.cwd(), "bin/kratos.js"), ["scan"], {
-    encoding: "utf8",
-  });
+test(
+  "launcher file executes directly through its shebang",
+  { skip: skipDirectExecutableTests },
+  () => {
+    const result = spawnSync(path.join(process.cwd(), "bin/kratos.js"), ["scan"], {
+      encoding: "utf8",
+    });
 
-  assert.equal(result.status, 1);
-  assert.match(
-    result.stderr,
-    /Kratos failed: Failed to load native addon package @kratos\/darwin-arm64:/,
-  );
-});
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, expectedMissingAddonPattern());
+  },
+);
 
 function captureStream() {
   let buffer = "";
@@ -133,4 +140,16 @@ function captureStream() {
       return buffer;
     },
   };
+}
+
+function escapeForRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function expectedMissingAddonPattern() {
+  const expectedPackageName = resolveAddonPackageName(process.platform, process.arch);
+
+  return new RegExp(
+    `Kratos failed: Failed to load native addon package ${escapeForRegex(expectedPackageName)}:`,
+  );
 }
