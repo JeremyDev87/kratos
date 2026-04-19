@@ -20,12 +20,16 @@ permissions:
   id-token: write
 
 jobs:
-  release:
-    name: Publish Release
+  resolve:
+    name: Resolve Release Metadata
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      NPM_CONFIG_CACHE: .npm-cache
+    timeout-minutes: 5
+
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      npmDistTag: ${{ steps.meta.outputs.npmDistTag }}
+      isPrerelease: ${{ steps.meta.outputs.isPrerelease }}
 
     steps:
       - name: Checkout workflow files
@@ -45,10 +49,189 @@ jobs:
 
           node ./scripts/release-plan.mjs "$tag" >> "$GITHUB_OUTPUT"
 
+  verify-node:
+    name: Verify Node Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: resolve
+    env:
+      NPM_CONFIG_CACHE: .npm-cache
+
+    steps:
       - name: Checkout tagged release ref
         uses: actions/checkout@v5
         with:
-          ref: ${{ steps.meta.outputs.tag }}
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-package-lock
+          fi
+
+      - name: Run node verification
+        run: npm run verify
+
+  verify-rust:
+    name: Verify Rust Workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: resolve
+
+    steps:
+      - name: Checkout tagged release ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
+  build-native-artifacts:
+    name: Build Native Artifact (${{ matrix.target }})
+    needs:
+      - resolve
+      - verify-rust
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            platform: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
+            os_family: macos
+            built_library: target/aarch64-apple-darwin/release/libkratos_node.dylib
+          - runner: macos-15-intel
+            platform: darwin
+            arch: x64
+            target: x86_64-apple-darwin
+            os_family: macos
+            built_library: target/x86_64-apple-darwin/release/libkratos_node.dylib
+          - runner: ubuntu-latest
+            platform: linux
+            arch: x64
+            target: x86_64-unknown-linux-gnu
+            os_family: linux
+            built_library: target/x86_64-unknown-linux-gnu/release/libkratos_node.so
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+            os_family: linux
+            built_library: target/aarch64-unknown-linux-gnu/release/libkratos_node.so
+          - runner: windows-latest
+            platform: win32
+            arch: x64
+            target: x86_64-pc-windows-msvc
+            os_family: windows
+            built_library: target/x86_64-pc-windows-msvc/release/kratos_node.dll
+
+    steps:
+      - name: Checkout tagged release ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add release target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Resolve addon package metadata
+        id: addon
+        shell: bash
+        run: |
+          package_name=$(node --input-type=module -e "import { resolveAddonPackageName } from './bin/kratos.js'; console.log(resolveAddonPackageName('${{ matrix.platform }}', '${{ matrix.arch }}'));")
+          package_slug=${package_name#@kratos/}
+
+          archive_name="${package_slug}-${{ needs.resolve.outputs.version }}-${{ matrix.target }}.tar.gz"
+
+          {
+            echo "package_name=$package_name"
+            echo "package_slug=$package_slug"
+            echo "archive_name=$archive_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build native addon library
+        run: cargo build -p kratos-node --release --target ${{ matrix.target }}
+
+      - name: Package native addon artifact
+        shell: bash
+        run: |
+          staging_dir="dist/${{ steps.addon.outputs.package_slug }}"
+          mkdir -p "$staging_dir"
+
+          cp "${{ matrix.built_library }}" "$staging_dir/kratos.node"
+          printf '%s\n' "${{ steps.addon.outputs.package_name }}" > "$staging_dir/PACKAGE_NAME"
+          printf '%s\n' "${{ matrix.target }}" > "$staging_dir/TARGET"
+          printf '%s\n' "${{ needs.resolve.outputs.tag }}" > "$staging_dir/RELEASE_TAG"
+
+          tar -czf "${{ steps.addon.outputs.archive_name }}" -C "$staging_dir" .
+
+      - name: Smoke native addon archive
+        shell: bash
+        run: |
+          extract_dir=$(mktemp -d)
+          tar -xzf "${{ steps.addon.outputs.archive_name }}" -C "$extract_dir"
+
+          test -f "$extract_dir/kratos.node"
+          test "$(cat "$extract_dir/PACKAGE_NAME")" = "${{ steps.addon.outputs.package_name }}"
+          test "$(cat "$extract_dir/TARGET")" = "${{ matrix.target }}"
+          test "$(cat "$extract_dir/RELEASE_TAG")" = "${{ needs.resolve.outputs.tag }}"
+
+          node -e "const addon=require(process.argv[1]); const runCli=typeof addon.runCli==='function'?addon.runCli:typeof addon.default?.runCli==='function'?addon.default.runCli:null; if (!runCli) throw new Error('runCli missing');" "$extract_dir/kratos.node"
+
+      - name: Upload native addon artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: ${{ steps.addon.outputs.archive_name }}
+          if-no-files-found: error
+
+  publish-root-package:
+    name: Publish Root Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - resolve
+      - verify-node
+      - verify-rust
+      - build-native-artifacts
+    env:
+      NPM_CONFIG_CACHE: .npm-cache
+
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+
+    steps:
+      - name: Checkout tagged release ref
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -68,10 +251,12 @@ jobs:
 
       - name: Verify package version matches tag
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           package_version=$(node -p "require('./package.json').version")
-          if [ "v$package_version" != "${{ steps.meta.outputs.tag }}" ]; then
-            echo "Tag ${{ steps.meta.outputs.tag }} does not match package.json version v$package_version"
+          if [ "v$package_version" != "$RELEASE_TAG" ]; then
+            echo "Tag $RELEASE_TAG does not match package.json version v$package_version"
             exit 1
           fi
 
@@ -80,7 +265,7 @@ jobs:
         shell: bash
         run: |
           package_name=$(node -p "require('./package.json').name")
-          if npm view "${package_name}@${{ steps.meta.outputs.version }}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
+          if npm view "${package_name}@${{ needs.resolve.outputs.version }}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
             echo "already_published=true" >> "$GITHUB_OUTPUT"
           else
             lookup_state=$(node ./scripts/classify-npm-lookup-error.mjs /tmp/npm-view-error.txt)
@@ -93,15 +278,29 @@ jobs:
             fi
           fi
 
-      - name: Run release verification
-        run: npm run verify
-
       - name: Pack release tarball
         id: pack
         shell: bash
         run: |
           tarball=$(npm pack --cache ./.npm-cache)
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke install packed root package
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d)
+          pushd "$smoke_dir" >/dev/null
+          npm init -y >/dev/null 2>&1
+          npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}" --no-package-lock
+          ./node_modules/.bin/kratos --help >/dev/null
+          popd >/dev/null
+
+      - name: Upload root npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: root-npm-tarball
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
 
       - name: Detect npm auth mode
         id: auth
@@ -119,7 +318,7 @@ jobs:
         if: ${{ steps.auth.outputs.mode == 'trusted' && steps.npm_state.outputs.already_published != 'true' }}
         shell: bash
         run: |
-          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ steps.meta.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
             exit 0
           fi
 
@@ -138,7 +337,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
-          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ steps.meta.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
             exit 0
           fi
 
@@ -155,20 +354,53 @@ jobs:
         if: ${{ steps.npm_state.outputs.already_published == 'true' }}
         run: echo "npm package version already published, skipping publish step."
 
+  github-release:
+    name: Create or Update GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - resolve
+      - build-native-artifacts
+      - publish-root-package
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Download root npm tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: root-npm-tarball
+          path: release-assets
+
+      - name: Download native addon artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: release-assets
+          merge-multiple: true
+
       - name: Create or update GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
+        env:
+          IS_PRERELEASE: ${{ needs.resolve.outputs.isPrerelease }}
         run: |
-          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
-            if [ "${{ steps.meta.outputs.isPrerelease }}" = "true" ]; then
-              gh release edit "${{ steps.meta.outputs.tag }}" --prerelease
+          shopt -s nullglob
+          assets=(release-assets/*)
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets were downloaded."
+            exit 1
+          fi
+
+          if gh release view "${{ needs.resolve.outputs.tag }}" >/dev/null 2>&1; then
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              gh release edit "${{ needs.resolve.outputs.tag }}" --prerelease
             fi
-            gh release upload "${{ steps.meta.outputs.tag }}" "${{ steps.pack.outputs.tarball }}" --clobber
+            gh release upload "${{ needs.resolve.outputs.tag }}" "${assets[@]}" --clobber
           else
             release_args=()
-            if [ "${{ steps.meta.outputs.isPrerelease }}" = "true" ]; then
+            if [ "$IS_PRERELEASE" = "true" ]; then
               release_args+=(--prerelease)
             fi
-            gh release create "${{ steps.meta.outputs.tag }}" "${{ steps.pack.outputs.tarball }}" --generate-notes --title "${{ steps.meta.outputs.tag }}" "${release_args[@]}"
+            gh release create "${{ needs.resolve.outputs.tag }}" "${assets[@]}" --generate-notes --title "${{ needs.resolve.outputs.tag }}" "${release_args[@]}"
           fi
