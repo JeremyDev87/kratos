@@ -7,7 +7,6 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import crypto from "node:crypto";
 
 import { resolveAddonPackageName } from "../bin/kratos.js";
 
@@ -15,6 +14,8 @@ const require = createRequire(import.meta.url);
 const packageJson = require("../package.json");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let cmdShimPromise;
+const npmCommand = "npm";
+const npmCommandOptions = process.platform === "win32" ? { shell: true } : {};
 const ADDON_TARGETS = [
   { platform: "darwin", arch: "arm64", os: "darwin", cpu: "arm64" },
   { platform: "darwin", arch: "x64", os: "darwin", cpu: "x64" },
@@ -24,12 +25,10 @@ const ADDON_TARGETS = [
 ];
 
 test("root npm pack dry-run excludes src runtime files", () => {
-  const result = spawnSync(
-    "npm",
+  const result = runNpmCommand(
     ["pack", "--dry-run", "--json", "--cache", path.join(repoRoot, ".npm-cache")],
     {
       cwd: repoRoot,
-      encoding: "utf8",
     },
   );
 
@@ -46,9 +45,123 @@ test("packed root package installs the platform addon through optionalDependenci
   const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "kratos-package-smoke-"));
   const outputPath = path.join(tempRoot, "run-cli-output.json");
   const rootPackage = await packRootTarball(tempRoot);
-  const addonTarballs = await packFakeAddonTarballs(tempRoot, outputPath);
-  const installRoot = path.join(tempRoot, "install-root");
+  const addonTarballs = await packAddonTarballs(tempRoot, { outputPath });
+  const installRoot = await installPackedRootPackage(tempRoot, rootPackage, addonTarballs);
   const addonPackageName = resolveAddonPackageName();
+
+  const installedRootPackage = JSON.parse(
+    await fsp.readFile(path.join(installRoot, "node_modules", "kratos", "package.json"), "utf8"),
+  );
+  const expectedAddonPackages = Object.keys(addonTarballs).sort();
+
+  assert.equal(installedRootPackage.bin.kratos, "./bin/kratos.js");
+  assert.deepEqual(installedRootPackage.optionalDependencies, packageJson.optionalDependencies);
+  assert.deepEqual(Object.keys(packageJson.optionalDependencies).sort(), expectedAddonPackages);
+
+  for (const packageName of expectedAddonPackages) {
+    assert.equal(packageJson.optionalDependencies[packageName], packageJson.version);
+  }
+
+  const installedAddonPath = path.join(
+    installRoot,
+    "node_modules",
+    ...addonPackageName.split("/"),
+  );
+  assert.equal(fs.existsSync(installedAddonPath), true);
+  await assertWindowsCmdShimTargetsInstalledLauncher(installRoot);
+
+  const runResult = runInstalledKratos(installRoot, ["scan", "fixtures/demo-app", "--json"], {
+    cwd: installRoot,
+    env: {
+      ...process.env,
+      KRATOS_PACKAGE_SMOKE_OUTPUT: outputPath,
+    },
+  });
+
+  assert.equal(runResult.status, 0, runResult.stderr || runResult.stdout);
+
+  const invocation = JSON.parse(await fsp.readFile(outputPath, "utf8"));
+  assert.deepEqual(invocation.args, ["scan", "fixtures/demo-app", "--json"]);
+});
+
+test("packed root package boots the actual native addon for the current platform", async (t) => {
+  const nativeLibraryPath = process.env.KRATOS_PACKAGE_SMOKE_NATIVE_LIB;
+
+  if (!nativeLibraryPath) {
+    t.skip("KRATOS_PACKAGE_SMOKE_NATIVE_LIB is not set");
+    return;
+  }
+
+  const resolvedNativeLibraryPath = path.resolve(repoRoot, nativeLibraryPath);
+  assert.equal(
+    fs.existsSync(resolvedNativeLibraryPath),
+    true,
+    `Expected native library at ${resolvedNativeLibraryPath}`,
+  );
+
+  const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "kratos-package-native-smoke-"));
+  const rootPackage = await packRootTarball(tempRoot);
+  const addonTarballs = await packAddonTarballs(tempRoot, {
+    nativeLibraryPath: resolvedNativeLibraryPath,
+  });
+  const installRoot = await installPackedRootPackage(tempRoot, rootPackage, addonTarballs);
+  const addonPackageName = resolveAddonPackageName();
+  const installedAddonPath = path.join(installRoot, "node_modules", ...addonPackageName.split("/"));
+  const demoAppPath = path.join(repoRoot, "fixtures", "demo-app");
+
+  assert.equal(fs.existsSync(path.join(installedAddonPath, "kratos.node")), true);
+  await assertWindowsCmdShimTargetsInstalledLauncher(installRoot);
+
+  const runResult = runInstalledKratos(installRoot, ["scan", demoAppPath, "--json"], {
+    cwd: installRoot,
+  });
+
+  assert.equal(runResult.status, 0, runResult.stderr || runResult.stdout);
+
+  const report = JSON.parse(runResult.stdout);
+  assert.equal(report.schemaVersion, 2);
+  assert.equal(path.resolve(report.project.root), demoAppPath);
+});
+
+async function assertWindowsCmdShimTargetsInstalledLauncher(installRoot) {
+  const launcherPath = path.join(installRoot, "node_modules", "kratos", "bin", "kratos.js");
+  let cmdShimBody;
+
+  if (process.platform === "win32") {
+    const installedShimPath = path.join(installRoot, "node_modules", ".bin", "kratos.cmd");
+    assert.equal(
+      fs.existsSync(installedShimPath),
+      true,
+      `Expected installed Windows cmd shim at ${installedShimPath}`,
+    );
+    cmdShimBody = await fsp.readFile(installedShimPath, "utf8");
+  } else {
+    const shimTarget = path.join(installRoot, "windows-bin", "kratos");
+    const cmdShim = await loadCmdShim();
+
+    await fsp.mkdir(path.dirname(shimTarget), { recursive: true });
+    await cmdShim(launcherPath, shimTarget);
+    cmdShimBody = await fsp.readFile(`${shimTarget}.cmd`, "utf8");
+  }
+
+  assert.match(cmdShimBody, /(?:node_modules|\.{2})\\kratos\\bin\\kratos\.js/i);
+  assert.match(cmdShimBody, /%\*/);
+}
+
+async function packRootTarball(tempRoot) {
+  const result = runNpmCommand(
+    ["pack", "--json", "--pack-destination", tempRoot, "--cache", path.join(repoRoot, ".npm-cache")],
+    { cwd: repoRoot },
+  );
+  const [packResult] = JSON.parse(result.stdout);
+
+  return {
+    tarballPath: path.join(tempRoot, packResult.filename),
+  };
+}
+
+async function installPackedRootPackage(tempRoot, rootPackage, addonTarballs) {
+  const installRoot = path.join(tempRoot, "install-root");
 
   await fsp.mkdir(installRoot, { recursive: true });
   await fsp.writeFile(
@@ -72,8 +185,7 @@ test("packed root package installs the platform addon through optionalDependenci
     ) + "\n",
   );
 
-  const installResult = runCommand(
-    "npm",
+  const installResult = runNpmCommand(
     [
       "install",
       "--cache",
@@ -89,89 +201,31 @@ test("packed root package installs the platform addon through optionalDependenci
   );
   assert.equal(installResult.status, 0, installResult.stderr || installResult.stdout);
 
-  const installedRootPackage = JSON.parse(
-    await fsp.readFile(path.join(installRoot, "node_modules", "kratos", "package.json"), "utf8"),
-  );
-  const expectedAddonPackages = Object.keys(addonTarballs).sort();
-
-  assert.equal(installedRootPackage.bin.kratos, "./bin/kratos.js");
-  assert.deepEqual(installedRootPackage.optionalDependencies, packageJson.optionalDependencies);
-  assert.deepEqual(Object.keys(packageJson.optionalDependencies).sort(), expectedAddonPackages);
-
-  for (const packageName of expectedAddonPackages) {
-    assert.equal(packageJson.optionalDependencies[packageName], packageJson.version);
-  }
-
-  const installedAddonPath = path.join(
-    installRoot,
-    "node_modules",
-    ...addonPackageName.split("/"),
-  );
-  assert.equal(fs.existsSync(installedAddonPath), true);
-  await assertWindowsCmdShimTargetsInstalledLauncher(installRoot);
-
-  const binaryPath =
-    process.platform === "win32"
-      ? path.join(installRoot, "node_modules", ".bin", "kratos.cmd")
-      : path.join(installRoot, "node_modules", ".bin", "kratos");
-
-  const runResult = runCommand(binaryPath, ["scan", "fixtures/demo-app", "--json"], {
-    cwd: installRoot,
-    env: {
-      ...process.env,
-      KRATOS_PACKAGE_SMOKE_OUTPUT: outputPath,
-    },
-  });
-
-  assert.equal(runResult.status, 0, runResult.stderr || runResult.stdout);
-
-  const invocation = JSON.parse(await fsp.readFile(outputPath, "utf8"));
-  assert.deepEqual(invocation.args, ["scan", "fixtures/demo-app", "--json"]);
-});
-
-async function assertWindowsCmdShimTargetsInstalledLauncher(installRoot) {
-  const launcherPath = path.join(installRoot, "node_modules", "kratos", "bin", "kratos.js");
-  const shimTarget = path.join(installRoot, "windows-bin", "kratos");
-  const cmdShim = await loadCmdShim();
-
-  await fsp.mkdir(path.dirname(shimTarget), { recursive: true });
-  await cmdShim(launcherPath, shimTarget);
-
-  const cmdShimBody = await fsp.readFile(`${shimTarget}.cmd`, "utf8");
-  assert.match(cmdShimBody, /node_modules\\kratos\\bin\\kratos\.js/);
-  assert.match(cmdShimBody, /%\*/);
+  return installRoot;
 }
 
-async function packRootTarball(tempRoot) {
-  const result = runCommand(
-    "npm",
-    ["pack", "--json", "--pack-destination", tempRoot, "--cache", path.join(repoRoot, ".npm-cache")],
-    { cwd: repoRoot },
-  );
-  const [packResult] = JSON.parse(result.stdout);
-
-  return {
-    tarballPath: path.join(tempRoot, packResult.filename),
-  };
-}
-
-async function packFakeAddonTarballs(tempRoot, outputPath) {
+async function packAddonTarballs(tempRoot, { outputPath, nativeLibraryPath } = {}) {
   const tarballs = {};
+  const currentAddonPackageName = nativeLibraryPath ? resolveAddonPackageName() : null;
 
   for (const target of ADDON_TARGETS) {
     const packageName = resolveAddonPackageName(target.platform, target.arch);
     const packageSlug = packageName.replace("@kratos/", "");
     const packageRoot = path.join(tempRoot, `${packageSlug}-package`);
+    const useNativeAddon = packageName === currentAddonPackageName;
 
     await fsp.mkdir(packageRoot, { recursive: true });
+    if (useNativeAddon) {
+      await fsp.copyFile(nativeLibraryPath, path.join(packageRoot, "kratos.node"));
+    }
     await fsp.writeFile(
       path.join(packageRoot, "package.json"),
       JSON.stringify(
         {
           name: packageName,
           version: packageJson.version,
-          main: "./index.js",
-          files: ["index.js"],
+          main: useNativeAddon ? "./kratos.node" : "./index.js",
+          files: useNativeAddon ? ["kratos.node"] : ["index.js"],
           os: [target.os],
           cpu: [target.cpu],
         },
@@ -179,24 +233,25 @@ async function packFakeAddonTarballs(tempRoot, outputPath) {
         2,
       ) + "\n",
     );
-    await fsp.writeFile(
-      path.join(packageRoot, "index.js"),
-      [
-        "const fs = require('node:fs');",
-        "",
-        "exports.runCli = function runCli(args) {",
-        "  const outputPath = process.env.KRATOS_PACKAGE_SMOKE_OUTPUT;",
-        "  if (outputPath) {",
-        "    fs.writeFileSync(outputPath, JSON.stringify({ args }) + '\\n');",
-        "  }",
-        "  return 0;",
-        "};",
-        "",
-      ].join("\n"),
-    );
+    if (!useNativeAddon) {
+      await fsp.writeFile(
+        path.join(packageRoot, "index.js"),
+        [
+          "const fs = require('node:fs');",
+          "",
+          "exports.runCli = function runCli(args) {",
+          "  const outputPath = process.env.KRATOS_PACKAGE_SMOKE_OUTPUT;",
+          "  if (outputPath) {",
+          "    fs.writeFileSync(outputPath, JSON.stringify({ args }) + '\\n');",
+          "  }",
+          "  return 0;",
+          "};",
+          "",
+        ].join("\n"),
+      );
+    }
 
-    const result = runCommand(
-      "npm",
+    const result = runNpmCommand(
       [
         "pack",
         packageRoot,
@@ -211,28 +266,22 @@ async function packFakeAddonTarballs(tempRoot, outputPath) {
     const [packResult] = JSON.parse(result.stdout);
 
     const tarballPath = path.join(tempRoot, packResult.filename);
-    const tarballBuffer = await fsp.readFile(tarballPath);
 
     tarballs[packageName] = {
-      packageName,
-      version: packageJson.version,
       tarballPath,
-      tarballFileName: packResult.filename,
-      shasum: crypto.createHash("sha1").update(tarballBuffer).digest("hex"),
-      integrity: `sha512-${crypto.createHash("sha512").update(tarballBuffer).digest("base64")}`,
-      os: [target.os],
-      cpu: [target.cpu],
     };
   }
 
-  assert.equal(fs.existsSync(outputPath), false);
+  if (outputPath) {
+    assert.equal(fs.existsSync(outputPath), false);
+  }
 
   return tarballs;
 }
 
 async function loadCmdShim() {
   if (!cmdShimPromise) {
-    const npmRootResult = runCommand("npm", ["root", "-g"], { cwd: repoRoot });
+    const npmRootResult = runNpmCommand(["root", "-g"], { cwd: repoRoot });
     const npmRoot = npmRootResult.stdout.trim();
     const cmdShimPath = [
       path.join(npmRoot, "npm", "node_modules", "cmd-shim", "lib", "index.js"),
@@ -257,4 +306,27 @@ function runCommand(command, args, options) {
   }
 
   return result;
+}
+
+function runNpmCommand(args, options) {
+  return runCommand(npmCommand, args, {
+    ...options,
+    ...npmCommandOptions,
+  });
+}
+
+function runInstalledKratos(installRoot, args, options = {}) {
+  const binaryPath =
+    process.platform === "win32"
+      ? path.join(installRoot, "node_modules", ".bin", "kratos.cmd")
+      : path.join(installRoot, "node_modules", ".bin", "kratos");
+
+  if (process.platform === "win32") {
+    return runCommand(binaryPath, args, {
+      shell: true,
+      ...options,
+    });
+  }
+
+  return runCommand(binaryPath, args, options);
 }
