@@ -142,9 +142,12 @@ jobs:
             --color "6E7781" \
             --description "Exclude automated release prep PRs from release notes."
 
-      - name: Create draft PR
+      - name: Create draft PR or print manual link
         if: ${{ !inputs.dry_run }}
         shell: bash
+        env:
+          DEFAULT_GH_TOKEN: ${{ github.token }}
+          PR_CREATE_TOKEN: ${{ secrets.KRATOS_RELEASE_BOT_TOKEN }}
         run: |
           cat > pr-body.md <<EOF
           ## 배경 / Background
@@ -174,10 +177,43 @@ jobs:
           - release 실행 전 최종 확인이 필요합니다.
           EOF
 
-          gh pr create \
+          if [ -n "$PR_CREATE_TOKEN" ]; then
+            export GH_TOKEN="$PR_CREATE_TOKEN"
+          else
+            export GH_TOKEN="$DEFAULT_GH_TOKEN"
+          fi
+
+          if pr_url=$(gh pr create \
             --draft \
             --base "${{ inputs.base_ref }}" \
             --head "${{ steps.meta.outputs.branch }}" \
             --title "${{ steps.meta.outputs.title }}" \
             --body-file pr-body.md \
-            --label skip-changelog
+            --label skip-changelog 2>/tmp/gh-pr-create-error.txt); then
+            echo "Created draft PR: $pr_url"
+            exit 0
+          fi
+
+          if grep -qiE "not permitted to create or approve pull requests|Resource not accessible by integration|createPullRequest" /tmp/gh-pr-create-error.txt; then
+            compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/${{ inputs.base_ref }}...${{ steps.meta.outputs.branch }}?expand=1"
+
+            {
+              echo "### Manual release bump branch is ready"
+              echo
+              echo "GitHub Actions could not create a pull request with the available token."
+              echo
+              echo "- base: \`${{ inputs.base_ref }}\`"
+              echo "- branch: \`${{ steps.meta.outputs.branch }}\`"
+              echo "- title: \`${{ steps.meta.outputs.title }}\`"
+              echo "- PR URL: $compare_url"
+              echo
+              echo "Configure \`KRATOS_RELEASE_BOT_TOKEN\` with pull request creation permission to let this workflow create the draft PR automatically."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            cat /tmp/gh-pr-create-error.txt
+            echo "::warning::GitHub Actions is not permitted to create pull requests; branch was pushed and CI was dispatched. Open the PR manually: $compare_url"
+            exit 0
+          fi
+
+          cat /tmp/gh-pr-create-error.txt
+          exit 1
