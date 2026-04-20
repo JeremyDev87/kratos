@@ -1,6 +1,6 @@
 {
   "name": "kratos",
-  "version": "0.2.0-alpha.1",
+  "version": "0.2.0",
   "description": "Destroy dead code ruthlessly.",
   "author": "JeremyDev87",
   "type": "module",
@@ -47,11 +47,11 @@
     "analysis"
   ],
   "optionalDependencies": {
-    "@kratos/darwin-arm64": "0.2.0-alpha.1",
-    "@kratos/darwin-x64": "0.2.0-alpha.1",
-    "@kratos/linux-x64-gnu": "0.2.0-alpha.1",
-    "@kratos/linux-arm64-gnu": "0.2.0-alpha.1",
-    "@kratos/win32-x64-msvc": "0.2.0-alpha.1"
+    "@kratos/darwin-arm64": "0.2.0",
+    "@kratos/darwin-x64": "0.2.0",
+    "@kratos/linux-x64-gnu": "0.2.0",
+    "@kratos/linux-arm64-gnu": "0.2.0",
+    "@kratos/win32-x64-msvc": "0.2.0"
   },
   "license": "MIT",
   "publishConfig": {
