@@ -1,0 +1,26 @@
+categories:
+  - title: "Features"
+    labels:
+      - "feat"
+      - "enhancement"
+  - title: "Bug Fixes"
+    labels:
+      - "bug"
+  - title: "Documentation"
+    labels:
+      - "documentation"
+  - title: "Tests"
+    labels:
+      - "test"
+  - title: "Maintenance"
+    labels:
+      - "chore"
+      - "ci"
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+template: |
+  ## Changes
+  $CHANGES
+
+  ## Notes
+  - This draft is updated automatically from the current `package.json` version on `master`.
+  - Actual tag and publish steps continue to use the `Release` workflow and `scripts/release-plan.mjs`.
