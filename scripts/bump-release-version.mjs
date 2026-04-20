@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { resolveReleasePlan } from "./lib/release.mjs";
+import { assertReleaseUpgrade, resolveReleasePlan } from "./lib/release.mjs";
 
 export function normalizeReleaseTag(input) {
   return input.startsWith("v") ? input : `v${input}`;
@@ -25,11 +26,32 @@ export function updatePackageManifest(pkg, version) {
   return nextPkg;
 }
 
+export function createManualBumpBranchName(input, baseRef = "master") {
+  const normalizedTag = normalizeReleaseTag(input);
+  const branchBase = baseRef
+    .replace(/[./+]/g, "-")
+    .replace(/[^0-9A-Za-z-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const branchVersion = normalizedTag
+    .slice(1)
+    .replace(/[.+]/g, "-")
+    .replace(/[^0-9A-Za-z-]/g, "-");
+  const branchHash = crypto
+    .createHash("sha256")
+    .update(`${baseRef}\0${normalizedTag}`)
+    .digest("hex")
+    .slice(0, 8);
+
+  return `codex/manual-bump-${branchBase}-v${branchVersion}-${branchHash}`;
+}
+
 export async function bumpPackageVersion(input, packageJsonPath = "package.json") {
   const normalizedTag = normalizeReleaseTag(input);
   const plan = resolveReleasePlan(normalizedTag);
   const manifestPath = path.resolve(packageJsonPath);
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+  assertReleaseUpgrade(manifest.version, plan.version);
   const nextManifest = updatePackageManifest(manifest, plan.version);
 
   await fs.writeFile(manifestPath, `${JSON.stringify(nextManifest, null, 2)}\n`);

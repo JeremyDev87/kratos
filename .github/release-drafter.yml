@@ -1,3 +1,6 @@
+exclude-labels:
+  - "skip-changelog"
+
 categories:
   - title: "Features"
     labels:

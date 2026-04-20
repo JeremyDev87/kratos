@@ -6,6 +6,11 @@ on:
       - master
   workflow_dispatch:
     inputs:
+      target_ref:
+        description: Branch to inspect when refreshing the draft manually
+        required: false
+        default: master
+        type: string
       dry_run:
         description: Run without updating the draft release
         required: false
@@ -23,6 +28,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -39,16 +45,18 @@ jobs:
 
           node ./scripts/release-plan.mjs "$tag" >> "$GITHUB_OUTPUT"
 
-          if [[ "$version" == *-* ]]; then
-            draft_tag="${tag}.draft"
-          else
-            draft_tag="${tag}-draft"
-          fi
+          draft_tag="draft-${tag}"
 
           {
             echo "draftTag=$draft_tag"
             echo "draftName=Draft $tag"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Guard live draft updates to master
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run && inputs.target_ref != 'master' }}
+        run: |
+          echo "Non-dry-run manual draft updates must target master."
+          exit 1
 
       - name: Update release draft
         uses: release-drafter/release-drafter@6db134d15f3909ccc9eefd369f02bd1e9cffdf97 # v6
@@ -56,6 +64,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           config-name: release-drafter.yml
+          commitish: ${{ github.event_name == 'workflow_dispatch' && inputs.target_ref || github.ref_name }}
           tag: ${{ steps.meta.outputs.draftTag }}
           name: ${{ steps.meta.outputs.draftName }}
           version: ${{ steps.meta.outputs.version }}
