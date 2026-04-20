@@ -4,7 +4,9 @@ Thanks for helping make Kratos sharper.
 
 Kratos aims to find dead code safely and conservatively. That means changes
 should prefer correctness over aggressiveness, and we should bias toward fewer
-false positives when the analysis is uncertain.
+false positives when the analysis is uncertain. The current runtime shape is a
+Rust core/CLI distributed through an npm launcher plus per-platform native
+addon packages.
 
 ## Before You Start
 
@@ -26,43 +28,66 @@ false positives when the analysis is uncertain.
 npm install
 ```
 
-### Useful Commands
+### Recommended Validation
 
 ```bash
-npm test
+cargo test --workspace
+npm run verify
 npm run smoke
 npm run scan -- ./fixtures/demo-app
 npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
 npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
+If you want to invoke the Rust CLI directly from the repo checkout, you can
+also use:
+
+```bash
+cargo run -p kratos-cli -- scan ./fixtures/demo-app
+cargo run -p kratos-cli -- report ./fixtures/demo-app/.kratos/latest-report.json --format md
+cargo run -p kratos-cli -- clean ./fixtures/demo-app/.kratos/latest-report.json
+```
+
+Do not assume `npx kratos ...` will work from a raw repository checkout. The
+packaged launcher expects published native addon packages, so local development
+should use the npm scripts above or the Rust CLI directly.
+
 ## What We Review For
 
 - Correctness of the analysis
 - Safety of deletion behavior
 - Low false-positive risk for scan results
-- Clear CLI behavior and documentation
+- Clear CLI behavior, packaging, and release ergonomics
+- Documentation parity across `README.md`, `README.en.md`, `README.es.md`,
+  `README.ja.md`, and `README.zh-CN.md` when user-facing behavior changes
 - Regression coverage for parser and resolver edge cases
 
 ## Pull Request Guidelines
 
 1. Fork the repo and create a focused branch.
 2. Add or update tests for behavior changes.
-3. Update documentation when commands, config, or output changes.
-4. Keep commits and PR descriptions specific.
-5. Explain trade-offs when a heuristic is intentionally conservative.
+3. Update documentation when commands, config, output, packaging, or release
+   flow changes.
+4. Keep all README translations aligned when you change shared user-facing
+   behavior.
+5. Keep commits and PR descriptions specific.
+6. Explain trade-offs when a heuristic is intentionally conservative.
 
 ## Testing Expectations
 
 At minimum, please run:
 
 ```bash
-npm test
-npm run smoke
+cargo test --workspace
+npm run verify
 ```
 
-If your change affects CLI behavior, include the command you ran and the
-observed result in the PR description.
+Also run `npm run smoke` when your change touches packaging, the launcher, or
+release automation.
+
+If your change affects CLI behavior or documentation, include the command you
+ran and the observed result in the PR description. For command examples, prefer
+`./fixtures/demo-app` so reviewers can reproduce the same path locally.
 
 ## Reporting Bugs
 
