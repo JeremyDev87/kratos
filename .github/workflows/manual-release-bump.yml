@@ -19,11 +19,13 @@ on:
         type: boolean
 
 permissions:
+  actions: write
   contents: write
+  issues: write
   pull-requests: write
 
 concurrency:
-  group: manual-release-bump-${{ inputs.base_ref }}-${{ inputs.tag }}
+  group: manual-release-bump-${{ inputs.base_ref }}-${{ startsWith(inputs.tag, 'v') && inputs.tag || format('v{0}', inputs.tag) }}
   cancel-in-progress: false
 
 jobs:
@@ -56,13 +58,9 @@ jobs:
           node ./scripts/release-plan.mjs "$tag" >> "$GITHUB_OUTPUT"
 
           current_version=$(node -p "require('./package.json').version")
-          if [ "$current_version" = "${tag#v}" ]; then
-            echo "package.json is already at version $current_version"
-            exit 1
-          fi
+          node --input-type=module -e "import { assertReleaseUpgrade } from './scripts/lib/release.mjs'; assertReleaseUpgrade(process.argv[1], process.argv[2]);" "$current_version" "${tag#v}"
 
-          branch_version=$(printf '%s' "${tag#v}" | tr '.+' '-' | tr -c '0-9A-Za-z-' '-')
-          branch="codex/manual-bump-v${branch_version}"
+          branch=$(node --input-type=module -e "import { createManualBumpBranchName } from './scripts/bump-release-version.mjs'; console.log(createManualBumpBranchName(process.argv[1], process.argv[2]));" "$tag" "${{ inputs.base_ref }}")
 
           {
             echo "currentVersion=$current_version"
@@ -73,7 +71,7 @@ jobs:
       - name: Apply version bump
         run: node ./scripts/bump-release-version.mjs "${{ steps.meta.outputs.tag }}"
 
-      - name: Verify changed files
+      - name: Verify changed files before package verification
         shell: bash
         run: |
           changed_files=$(git diff --name-only)
@@ -86,23 +84,63 @@ jobs:
       - name: Verify package
         run: npm run verify
 
+      - name: Verify changed files after package verification
+        shell: bash
+        run: |
+          changed_files=$(git diff --name-only)
+          if [ "$changed_files" != "package.json" ]; then
+            echo "Unexpected changed files after verification:"
+            printf '%s\n' "$changed_files"
+            exit 1
+          fi
+
       - name: Stop after dry run
         if: ${{ inputs.dry_run }}
         run: echo "Dry run requested; skipping branch push and PR creation."
+
+      - name: Configure git author
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Prepare bump branch
         if: ${{ !inputs.dry_run }}
         shell: bash
         run: |
+          lease_args=()
+
           if gh pr list --head "${{ steps.meta.outputs.branch }}" --state open --json number --jq 'length > 0' | grep -q true; then
             echo "An open PR already exists for branch ${{ steps.meta.outputs.branch }}"
             exit 1
           fi
 
-          git switch -c "${{ steps.meta.outputs.branch }}"
+          if git ls-remote --exit-code --heads origin "${{ steps.meta.outputs.branch }}" >/dev/null 2>&1; then
+            echo "Remote branch ${{ steps.meta.outputs.branch }} already exists; refreshing it with the verified bump commit."
+            git fetch origin "refs/heads/${{ steps.meta.outputs.branch }}:refs/remotes/origin/${{ steps.meta.outputs.branch }}"
+            lease_args+=(--force-with-lease="refs/heads/${{ steps.meta.outputs.branch }}:$(git rev-parse "refs/remotes/origin/${{ steps.meta.outputs.branch }}")")
+          fi
+
+          git switch -C "${{ steps.meta.outputs.branch }}"
           git add package.json
           git commit -m "${{ steps.meta.outputs.title }}"
-          git push -u origin "${{ steps.meta.outputs.branch }}"
+          git push "${lease_args[@]}" -u origin "${{ steps.meta.outputs.branch }}"
+
+      - name: Dispatch CI for bump branch
+        if: ${{ !inputs.dry_run }}
+        run: gh workflow run ci.yml --ref "${{ steps.meta.outputs.branch }}"
+
+      - name: Ensure skip-changelog label exists
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        run: |
+          if gh label list --search "skip-changelog" --json name --jq 'map(select(.name == "skip-changelog")) | length > 0' | grep -q true; then
+            exit 0
+          fi
+
+          gh label create "skip-changelog" \
+            --color "6E7781" \
+            --description "Exclude automated release prep PRs from release notes."
 
       - name: Create draft PR
         if: ${{ !inputs.dry_run }}
@@ -142,4 +180,4 @@ jobs:
             --head "${{ steps.meta.outputs.branch }}" \
             --title "${{ steps.meta.outputs.title }}" \
             --body-file pr-body.md \
-            --label chore
+            --label skip-changelog
