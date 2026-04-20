@@ -289,14 +289,14 @@ jobs:
         run: node --test test/package-smoke.test.js
 
       - name: Upload native addon artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.target }}
           path: ${{ steps.addon.outputs.archive_name }}
           if-no-files-found: error
 
       - name: Upload addon npm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: addon-npm-${{ matrix.target }}
           path: ${{ steps.addon_pack.outputs.tarball }}
@@ -327,7 +327,7 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Download addon npm tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: addon-npm-*
           path: addon-packages
@@ -379,7 +379,7 @@ jobs:
               exit 1
             fi
 
-            if npm publish "$tarball" --access public --tag "$NPM_DIST_TAG" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+            if npm publish "./$tarball" --access public --tag "$NPM_DIST_TAG" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
               echo "Published ${package_name}@${package_version}"
               continue
             fi
@@ -428,7 +428,7 @@ jobs:
               exit 1
             fi
 
-            if npm publish "$tarball" --access public --tag "$NPM_DIST_TAG" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+            if npm publish "./$tarball" --access public --tag "$NPM_DIST_TAG" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
               echo "Published ${package_name}@${package_version}"
               continue
             fi
@@ -526,7 +526,7 @@ jobs:
           popd >/dev/null
 
       - name: Upload root npm tarball
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: root-npm-tarball
           path: ${{ steps.pack.outputs.tarball }}
@@ -548,7 +548,7 @@ jobs:
         if: ${{ steps.auth.outputs.mode == 'trusted' && steps.npm_state.outputs.already_published != 'true' }}
         shell: bash
         run: |
-          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+          if npm publish "./${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
             exit 0
           fi
 
@@ -567,7 +567,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         shell: bash
         run: |
-          if npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+          if npm publish "./${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
             exit 0
           fi
 
@@ -598,20 +598,20 @@ jobs:
 
     steps:
       - name: Download root npm tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: root-npm-tarball
           path: release-assets
 
       - name: Download native addon artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: native-*
           path: release-assets
           merge-multiple: true
 
       - name: Download addon npm tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: addon-npm-*
           path: release-assets
