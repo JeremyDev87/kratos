@@ -8,7 +8,7 @@ Destroy dead code ruthlessly.
 
 [License](LICENSE) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [Sponsor](https://github.com/sponsors/JeremyDev87)
 
-Kratos es una herramienta CLI para encontrar código muerto escondido dentro de tu proyecto, incluidos archivos no usados, imports rotos y módulos huérfanos, y sugerir candidatos de eliminación seguros. A medida que se acumula el legado, la base de código se vuelve más pesada y el costo de mantenimiento aumenta. Kratos se enfoca en exponer esos restos innecesarios y ayudar a que el código vuelva a sentirse ágil.
+Kratos es una herramienta CLI para encontrar código muerto escondido dentro de tu proyecto, incluidos archivos no usados, imports rotos y módulos huérfanos, y sugerir candidatos de eliminación seguros. La distribución actual combina un core/CLI en Rust con un launcher de npm y se centra en un análisis conservador y en limpiezas seguras.
 
 ## Capacidades Principales
 
@@ -21,14 +21,42 @@ Kratos es una herramienta CLI para encontrar código muerto escondido dentro de 
 
 ## Inicio Rápido
 
+Para usar el paquete, la entrada por defecto es `npx`.
+
 ```bash
-npm install
-npx kratos scan
-npx kratos report
-npx kratos clean
+npx kratos scan ./your-project
+npx kratos report ./your-project/.kratos/latest-report.json
+npx kratos clean ./your-project/.kratos/latest-report.json
 ```
 
-Durante el desarrollo local, también puedes ejecutar:
+- `scan` escribe `.kratos/latest-report.json` por defecto.
+- `clean` es dry-run por defecto y solo elimina archivos cuando añades `--apply`.
+
+## Desarrollo Local
+
+En un checkout del repositorio, usa el CLI de Rust y los scripts de npm.
+
+Requisitos:
+
+- Node.js 18+
+- npm 9+
+- Rust stable toolchain
+
+Instalación:
+
+```bash
+npm install
+```
+
+Verificación recomendada:
+
+```bash
+cargo test --workspace
+npm run verify
+npm run smoke
+```
+
+Para probar el CLI dentro del repo:
 
 ```bash
 npm run scan -- ./fixtures/demo-app
@@ -36,66 +64,70 @@ npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
 npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
+En un checkout es posible que todavía no existan los paquetes publicados del addon nativo, así que conviene usar los comandos anteriores o `cargo run -p kratos-cli -- ...` en lugar de `npx kratos ...`.
+
 ## Comandos
 
 ### `kratos scan [root]`
 
-Escanea un proyecto y guarda el resultado del análisis en `.kratos/latest-report.json`.
+Escanea un proyecto y guarda el último reporte.
 
-Opciones:
-
+- ruta de salida por defecto: `<root>/.kratos/latest-report.json`
 - `--output <path>`: define una ruta personalizada para el reporte
-- `--json`: imprime el JSON completo en lugar del resumen en consola
+- `--json`: imprime el JSON completo en stdout en lugar del resumen de consola
 
 ### `kratos report [report-path-or-root]`
 
-Lee el reporte más reciente guardado y lo muestra en un formato más legible.
-
-Opciones:
+Imprime un reporte guardado en formato summary, JSON o Markdown.
 
 - `--format summary`: salida resumida por defecto
 - `--format json`: salida JSON cruda
 - `--format md`: salida del reporte en Markdown
+- si pasas la raíz del proyecto en lugar del path del reporte, Kratos resuelve automáticamente el último reporte
 
 ### `kratos clean [report-path-or-root]`
 
 Muestra candidatos de eliminación o los elimina realmente.
 
-Opciones:
-
+- dry-run por defecto
 - `--apply`: ejecuta la eliminación real
+- si pasas la raíz del proyecto en lugar del path del reporte, Kratos resuelve automáticamente el último reporte
 
-El comportamiento por defecto es dry-run. Sin `--apply`, no se elimina ningún archivo.
+## Esquema Del Reporte
 
-## Qué Detecta El MVP Actual
+La salida actual del scan en Rust escribe `schemaVersion: 2`.
 
-- Grafo de archivos JS / JSX / TS / TSX / MJS / CJS
+```json
+{
+  "schemaVersion": 2,
+  "summary": {
+    "filesScanned": 5,
+    "entrypoints": 1,
+    "brokenImports": 1,
+    "orphanFiles": 2,
+    "deadExports": 3,
+    "unusedImports": 0,
+    "routeEntrypoints": 1,
+    "deletionCandidates": 2
+  }
+}
+```
+
+- la ubicación guardada por defecto es `.kratos/latest-report.json`
+- `report` y `clean` aceptan tanto la ruta del reporte como la raíz del proyecto
+- la salida Markdown incluye broken imports, orphan files, dead exports, route entrypoints y deletion candidates
+
+## Cobertura Actual
+
+- Analizador en Rust con parsing de imports/exports JS/TS basado en Oxc
 - relative import / require / dynamic import
 - `baseUrl` y `paths` de `tsconfig.json` / `jsconfig.json`
-- Heurísticas de entrypoints para Next.js `app/` / `pages/`
-- Entrypoints de package.json `main`, `module`, `bin` y `exports`
-- Candidatos de orphan file / orphan component
-- Candidatos de dead export
-- Candidatos de unused import
-- Broken internal import
-
-## Ejemplo De Reporte
-
-```bash
-$ npm run scan -- ./fixtures/demo-app
-Kratos scan complete.
-
-Root: /.../fixtures/demo-app
-Files scanned: 5
-Entrypoints: 1
-Broken imports: 1
-Orphan files: 2
-Dead exports: 3
-Unused imports: 0
-Deletion candidates: 2
-
-Saved report: /.../fixtures/demo-app/.kratos/latest-report.json
-```
+- heurísticas de route entrypoints para Next.js `app/` / `pages/`
+- entrypoints `main`, `module`, `bin` y `exports` de `package.json`
+- candidatos de orphan file / orphan component
+- candidatos de dead export
+- candidatos de unused import
+- broken internal imports
 
 ## Configuración
 
@@ -119,27 +151,30 @@ Opcionalmente puedes añadir `kratos.config.json`.
 - Equipos con muchas funciones lanzadas y mucho código acumulado
 - Equipos que buscan el momento adecuado para refactorizar
 
-## Releases
+## Flujo De Release
 
-Kratos usa etiquetas de versión semántica como `v0.2.0-alpha.1` o `v1.0.0` para publicar releases.
+La automatización de release de Kratos se basa en etiquetas semánticas como `v0.2.0-alpha.1` y `v0.2.0`.
 
-```bash
-npm version 0.2.0-alpha.1 --no-git-tag-version
-git add package*.json
-git commit -m "chore: release v0.2.0-alpha.1"
-git tag v0.2.0-alpha.1
-git push origin HEAD
-git push origin v0.2.0-alpha.1
-```
+Preparación del alpha:
 
-Cuando se envía una etiqueta, el [release workflow](.github/workflows/release.yml):
+- mantén la versión del paquete raíz en `0.2.0-alpha.1`
+- antes de etiquetar, ejecuta `cargo test --workspace`, `npm run verify`, `npm run smoke` y los smoke tests de `scan/report/clean` con fixtures
+- crea y publica la etiqueta alpha solo después de la confirmación del maintainer
 
-- ejecuta `npm run verify`
-- genera el tarball de publicación para npm
-- publica las releases estables en npm `latest` y las prereleases en npm `next`
-- crea un GitHub Release y adjunta el tarball
+El [release workflow](.github/workflows/release.yml) se ejecuta con una etiqueta push o con un disparo manual sobre una etiqueta existente y luego:
 
-La configuración recomendada es npm Trusted Publishing (OIDC). Si todavía no está configurado, el workflow puede usar como fallback el secret `NPM_TOKEN` del repositorio.
+- resuelve la metadata del release y asigna a las prereleases el dist-tag `next`
+- verifica por separado el paquete de Node y el workspace de Rust
+- construye artefactos nativos para macOS arm64/x64, Linux x64/arm64 y Windows x64
+- empaqueta y smoke-testea primero los paquetes npm addon por plataforma
+- publica al final el paquete raíz `kratos` y crea el GitHub Release
+
+Promoción a stable:
+
+- después de validar el alpha, sube `package.json` de `0.2.0-alpha.1` a `0.2.0` en un commit de release-prep solo de versión
+- crea la etiqueta stable `v0.2.0` en un paso separado, que publica a npm `latest`
+
+La configuración recomendada de publicación es npm Trusted Publishing (OIDC). Cuando haga falta, también puede usarse el fallback con el secret `NPM_TOKEN` del repositorio.
 
 ## Open Source
 
@@ -152,4 +187,4 @@ Kratos es un proyecto open source publicado bajo la licencia MIT.
 
 ## Nota
 
-Esta versión es un MVP heurístico, no un analizador basado en AST. Está optimizado para revisar proyectos grandes rápidamente, y siempre deberías revisar el reporte antes de borrar algo.
+La alpha actual usa un core en Rust y parsing basado en Oxc, pero la detección de entrypoints y los candidatos de borrado seguro todavía incluyen heurísticas conservadoras. Revisa siempre el reporte antes de ejecutar `--apply`.
