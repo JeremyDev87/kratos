@@ -595,6 +595,7 @@ jobs:
       - publish-root-package
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
 
     steps:
       - name: Download root npm tarball
