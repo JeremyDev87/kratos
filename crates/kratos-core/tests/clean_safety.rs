@@ -108,7 +108,35 @@ fn clean_ignores_cleanup_failures_after_successful_delete() {
 }
 
 #[test]
-fn clean_rejects_invalid_report_version_from_file() {
+fn clean_from_report_path_accepts_future_schema_reports_when_shape_is_compatible() {
+    let temp_root = temp_dir("clean-future-schema");
+    let report_root = temp_root.join("app");
+    let dead_file = report_root.join("dead.ts");
+    let report_path = report_root.join(".kratos/latest-report.json");
+
+    std::fs::create_dir_all(report_path.parent().expect("report dir should exist"))
+        .expect("report dir should exist");
+    std::fs::write(&dead_file, "export const dead = true;\n").expect("dead file writes");
+    std::fs::write(
+        &report_path,
+        format!(
+            "{{\"schemaVersion\":3,\"generatedAt\":\"2026-04-21T00:00:00Z\",\"project\":{{\"root\":\"{}\",\"configPath\":null}},\"summary\":{{\"filesScanned\":1,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":1}},\"findings\":{{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[{{\"file\":\"{}\",\"reason\":\"test\",\"confidence\":1.0,\"safe\":true}}]}},\"graph\":{{\"modules\":[]}}}}",
+            report_root.display(),
+            dead_file.display(),
+        ),
+    )
+    .expect("report writes");
+
+    let outcome =
+        clean_from_report_path(&report_path, true).expect("future-schema clean should work");
+
+    assert!(!dead_file.exists());
+    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.skipped_files, 0);
+}
+
+#[test]
+fn clean_from_report_path_rejects_legacy_v1_reports() {
     let temp_root = temp_dir("clean-invalid-version");
     let report_path = temp_root.join("latest-report.json");
 
@@ -124,6 +152,29 @@ fn clean_rejects_invalid_report_version_from_file() {
 
     let error =
         clean_from_report_path(&report_path, true).expect_err("v1 reports should be rejected");
+
+    match error {
+        KratosError::InvalidReportVersion { expected, found } => {
+            assert_eq!(expected, 2);
+            assert_eq!(found, 1);
+        }
+        other => panic!("expected invalid report version error, got {other}"),
+    }
+}
+
+#[test]
+fn clean_from_report_rejects_reports_older_than_v2() {
+    let temp_root = temp_dir("clean-report-version-floor");
+    let report_root = temp_root.join("app");
+    let dead_file = report_root.join("dead.ts");
+
+    std::fs::create_dir_all(&report_root).expect("report root should exist");
+    std::fs::write(&dead_file, "export const dead = true;\n").expect("dead file writes");
+
+    let mut report = report_with_candidate(&report_root, &dead_file);
+    report.version = 1;
+
+    let error = clean_from_report(&report, true).expect_err("older reports should be rejected");
 
     match error {
         KratosError::InvalidReportVersion { expected, found } => {

@@ -8,6 +8,7 @@ pub mod jsonc;
 pub mod model;
 pub mod parser;
 pub mod report;
+pub mod report_format;
 pub mod resolve;
 
 pub use error::{KratosError, KratosResult};

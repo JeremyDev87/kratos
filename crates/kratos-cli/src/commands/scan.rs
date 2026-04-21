@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use kratos_core::analyze::analyze_project;
 use kratos_core::report::serialize_report_pretty;
+use kratos_core::report_format::format_summary_report;
 use kratos_core::{KratosError, KratosResult};
 
 use super::{
-    canonicalize_scan_args, format_summary_report, resolve_input_path, write_output, CommandSpec,
+    canonicalize_scan_args, resolve_input_path, write_output, CommandSpec,
     DEFAULT_REPORT_RELATIVE_PATH,
 };
 
@@ -53,7 +54,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
 
     write_output(
         stdout,
-        &format_summary_report(&report, &output_path, "Kratos scan complete."),
+        &format_summary_report(&report, &output_path, "Kratos scan complete.")?,
     )?;
     Ok(0)
 }

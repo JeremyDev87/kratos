@@ -32,7 +32,7 @@ pub fn load_clean_report(report_path: impl AsRef<Path>) -> KratosResult<ReportV2
         .ok_or_else(|| KratosError::Json("Report is missing schemaVersion/version".to_string()))?
         as u32;
 
-    if version != REPORT_V2 {
+    if version < REPORT_V2 {
         return Err(KratosError::InvalidReportVersion {
             expected: REPORT_V2,
             found: version,
@@ -43,7 +43,7 @@ pub fn load_clean_report(report_path: impl AsRef<Path>) -> KratosResult<ReportV2
 }
 
 pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOutcome> {
-    if report.version != REPORT_V2 {
+    if report.version < REPORT_V2 {
         return Err(KratosError::InvalidReportVersion {
             expected: REPORT_V2,
             found: report.version,

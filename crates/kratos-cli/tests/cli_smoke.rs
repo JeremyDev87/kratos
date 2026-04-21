@@ -266,6 +266,115 @@ fn report_markdown_uses_undefined_for_missing_generated_at() {
 }
 
 #[test]
+fn report_summary_and_markdown_accept_future_schema_versions() {
+    let project_root = copy_demo_app("cli-report-future-schema");
+    let report_path = project_root.join("report-v3.json");
+    std::fs::write(
+        &report_path,
+        "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"graph\":{\"modules\":[]}}\n",
+    )
+    .expect("report should write");
+
+    let summary = run_cli_in_dir(
+        &project_root,
+        &[
+            "report",
+            report_path.to_str().expect("path should be utf8"),
+            "--format",
+            "summary",
+        ],
+    );
+    assert!(summary.status.success());
+    assert!(String::from_utf8_lossy(&summary.stdout).contains("Kratos report."));
+
+    let markdown = run_cli_in_dir(
+        &project_root,
+        &[
+            "report",
+            report_path.to_str().expect("path should be utf8"),
+            "--format",
+            "md",
+        ],
+    );
+    assert!(markdown.status.success());
+    assert!(String::from_utf8_lossy(&markdown.stdout).contains("# Kratos Report"));
+}
+
+#[test]
+fn report_incomplete_future_schema_fails_fast() {
+    let project_root = copy_demo_app("cli-report-incomplete-future-schema");
+    let report_path = project_root.join("report-v3-min.json");
+    std::fs::write(&report_path, "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\"}}\n")
+        .expect("report should write");
+
+    let summary = run_cli_in_dir(
+        &project_root,
+        &[
+            "report",
+            report_path.to_str().expect("path should be utf8"),
+            "--format",
+            "summary",
+        ],
+    );
+    assert_eq!(summary.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&summary.stderr).contains("required object `summary`"));
+
+    let markdown = run_cli_in_dir(
+        &project_root,
+        &[
+            "report",
+            report_path.to_str().expect("path should be utf8"),
+            "--format",
+            "md",
+        ],
+    );
+    assert_eq!(markdown.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&markdown.stderr).contains("required object `summary`"));
+}
+
+#[test]
+fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
+    let project_root = copy_demo_app("cli-clean-future-schema");
+    let report_path = project_root.join("report-v3-clean.json");
+    let dead_file = project_root.join("dead.txt");
+    std::fs::write(&dead_file, "dead\n").expect("dead file should write");
+    std::fs::write(
+        &report_path,
+        format!(
+            "{{\"schemaVersion\":3,\"generatedAt\":\"2026-04-21T00:00:00Z\",\"project\":{{\"root\":\"{}\",\"configPath\":null}},\"summary\":{{\"filesScanned\":1,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":1}},\"findings\":{{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[{{\"file\":\"{}\",\"reason\":\"test\",\"confidence\":1.0,\"safe\":true}}]}},\"graph\":{{\"modules\":[]}}}}\n",
+            project_root.display(),
+            dead_file.display(),
+        ),
+    )
+    .expect("report should write");
+
+    let dry_run = run_cli_in_dir(
+        &project_root,
+        &[
+            "clean",
+            report_path.to_str().expect("path should be utf8"),
+        ],
+    );
+    assert!(dry_run.status.success());
+    let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
+    assert!(dry_run_stdout.contains("Kratos clean dry run."));
+    assert!(dry_run_stdout.contains(&dead_file.display().to_string()));
+    assert!(dead_file.exists());
+
+    let apply = run_cli_in_dir(
+        &project_root,
+        &[
+            "clean",
+            "--apply",
+            report_path.to_str().expect("path should be utf8"),
+        ],
+    );
+    assert!(apply.status.success());
+    assert!(String::from_utf8_lossy(&apply.stdout).contains("Kratos clean deleted 1 file(s)."));
+    assert!(!dead_file.exists());
+}
+
+#[test]
 fn scan_output_empty_string_defaults_and_missing_value_errors() {
     let project_root = copy_demo_app("cli-output-edge");
     let report_path = project_root.join(".kratos/latest-report.json");
