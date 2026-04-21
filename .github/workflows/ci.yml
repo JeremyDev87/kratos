@@ -144,7 +144,7 @@ jobs:
         shell: bash
         run: |
           package_name=$(node --input-type=module -e "import { resolveAddonPackageName } from './bin/kratos.js'; console.log(resolveAddonPackageName('${{ matrix.platform }}', '${{ matrix.arch }}'));")
-          package_slug=${package_name#@kratos/}
+          package_slug=${package_name##*/}
           archive_name="${package_slug}-ci-${{ matrix.target }}.tar.gz"
           package_version=$(node -p "require('./package.json').version")
 

@@ -98,7 +98,7 @@ Rust 경로가 준비된 뒤, npm package의 실제 실행 엔트리포인트를
 - `node ./scripts/release-plan.mjs v0.2.0-alpha.1`가 import 오류 없이 동작하는지 확인한다.
 - `node ./scripts/classify-npm-lookup-error.mjs ./fixtures/release-errors/npm-lookup-not-found.txt`가 `not-found`를 출력하는지 확인한다.
 - `node ./scripts/classify-npm-publish-error.mjs ./fixtures/release-errors/npm-publish-already-published.txt`가 `already-published`를 출력하는지 확인한다.
-- root package 기준 `npx kratos scan ./fixtures/demo-app` smoke를 수행한다.
+- root package 기준 `npx @jeremyfellaz/kratos scan ./fixtures/demo-app` smoke를 수행한다.
 
 ## PR 7A. Docs Sync And Alpha Release Readiness
 
@@ -140,9 +140,9 @@ Rust 경로가 준비된 뒤, npm package의 실제 실행 엔트리포인트를
 
 - `cargo test --workspace`
 - Node wrapper smoke
-- `npx kratos scan ./fixtures/demo-app`
-- `npx kratos report ./fixtures/demo-app/.kratos/latest-report.json`
-- `npx kratos clean ./fixtures/demo-app/.kratos/latest-report.json`
+- `npx @jeremyfellaz/kratos scan ./fixtures/demo-app`
+- `npx @jeremyfellaz/kratos report ./fixtures/demo-app/.kratos/latest-report.json`
+- `npx @jeremyfellaz/kratos clean ./fixtures/demo-app/.kratos/latest-report.json`
 - `npm pack --dry-run --cache ./.npm-cache`
 - Linux/macOS/Windows target artifact build
 - one macOS arm64 smoke

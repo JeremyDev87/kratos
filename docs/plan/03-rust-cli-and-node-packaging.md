@@ -87,11 +87,11 @@
    - return value를 `process.exitCode`에 반영
 6. native load 실패나 Rust error는 `Kratos failed: ...` 형식으로 stderr에 출력한다.
 7. addon package name은 아래 형식으로 고정한다.
-   - `@kratos/darwin-arm64`
-   - `@kratos/darwin-x64`
-   - `@kratos/linux-x64-gnu`
-   - `@kratos/linux-arm64-gnu`
-   - `@kratos/win32-x64-msvc`
+   - `@jeremyfellaz/kratos-darwin-arm64`
+   - `@jeremyfellaz/kratos-darwin-x64`
+   - `@jeremyfellaz/kratos-linux-x64-gnu`
+   - `@jeremyfellaz/kratos-linux-arm64-gnu`
+   - `@jeremyfellaz/kratos-win32-x64-msvc`
 
 ### Behavior Constraints
 

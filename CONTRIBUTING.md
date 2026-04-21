@@ -48,7 +48,7 @@ cargo run -p kratos-cli -- report ./fixtures/demo-app/.kratos/latest-report.json
 cargo run -p kratos-cli -- clean ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
-Do not assume `npx kratos ...` will work from a raw repository checkout. The
+Do not assume `npx @jeremyfellaz/kratos ...` will work from a raw repository checkout. The
 packaged launcher expects published native addon packages, so local development
 should use the npm scripts above or the Rust CLI directly.
 

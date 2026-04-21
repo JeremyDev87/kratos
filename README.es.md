@@ -24,9 +24,9 @@ Kratos es una herramienta CLI para encontrar código muerto escondido dentro de 
 Para usar el paquete, la entrada por defecto es `npx`.
 
 ```bash
-npx kratos scan ./your-project
-npx kratos report ./your-project/.kratos/latest-report.json
-npx kratos clean ./your-project/.kratos/latest-report.json
+npx @jeremyfellaz/kratos scan ./your-project
+npx @jeremyfellaz/kratos report ./your-project/.kratos/latest-report.json
+npx @jeremyfellaz/kratos clean ./your-project/.kratos/latest-report.json
 ```
 
 - `scan` escribe `.kratos/latest-report.json` por defecto.
@@ -64,7 +64,7 @@ npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
 npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
 ```
 
-En un checkout es posible que todavía no existan los paquetes publicados del addon nativo, así que conviene usar los comandos anteriores o `cargo run -p kratos-cli -- ...` en lugar de `npx kratos ...`.
+En un checkout es posible que todavía no existan los paquetes publicados del addon nativo, así que conviene usar los comandos anteriores o `cargo run -p kratos-cli -- ...` en lugar de `npx @jeremyfellaz/kratos ...`.
 
 ## Comandos
 

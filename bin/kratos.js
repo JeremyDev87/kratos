@@ -13,19 +13,19 @@ export function resolveAddonPackageName(
   arch = process.arch,
 ) {
   if (platform === "darwin" && arch === "arm64") {
-    return "@kratos/darwin-arm64";
+    return "@jeremyfellaz/kratos-darwin-arm64";
   }
   if (platform === "darwin" && arch === "x64") {
-    return "@kratos/darwin-x64";
+    return "@jeremyfellaz/kratos-darwin-x64";
   }
   if (platform === "linux" && arch === "x64") {
-    return "@kratos/linux-x64-gnu";
+    return "@jeremyfellaz/kratos-linux-x64-gnu";
   }
   if (platform === "linux" && arch === "arm64") {
-    return "@kratos/linux-arm64-gnu";
+    return "@jeremyfellaz/kratos-linux-arm64-gnu";
   }
   if (platform === "win32" && arch === "x64") {
-    return "@kratos/win32-x64-msvc";
+    return "@jeremyfellaz/kratos-win32-x64-msvc";
   }
 
   throw new Error(`Unsupported platform/arch for Kratos native addon: ${platform}/${arch}`);
