@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use crate::suppressions::SuppressionRule;
+
 pub const REPORT_V2: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,6 +16,7 @@ pub struct ProjectConfig {
     pub package_entries: Vec<PathBuf>,
     pub path_aliases: Vec<PathAlias>,
     pub external_packages: BTreeSet<String>,
+    pub suppressions: Vec<SuppressionRule>,
 }
 
 impl ProjectConfig {
@@ -28,6 +31,7 @@ impl ProjectConfig {
             package_entries: Vec::new(),
             path_aliases: Vec::new(),
             external_packages: BTreeSet::new(),
+            suppressions: Vec::new(),
         }
     }
 }
@@ -182,6 +186,7 @@ pub struct SummaryCounts {
     pub unused_imports: usize,
     pub route_entrypoints: usize,
     pub deletion_candidates: usize,
+    pub suppressed_findings: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]

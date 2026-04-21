@@ -10,6 +10,7 @@ pub mod parser;
 pub mod report;
 pub mod report_format;
 pub mod resolve;
+pub mod suppressions;
 
 pub use error::{KratosError, KratosResult};
 pub use model::*;

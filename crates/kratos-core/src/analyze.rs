@@ -9,11 +9,13 @@ use crate::entrypoints::detect_entrypoint_kind;
 use crate::error::KratosResult;
 use crate::model::{
     BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportRecord,
-    ImportSpecifierKind, ImportUsageRecord, ModuleRecord, OrphanFileFinding, OrphanKind,
-    ProjectConfig, ReportV2, ResolvedImportRecord, RouteEntrypointFinding, UnusedImportFinding,
+    FindingSet, ImportSpecifierKind, ImportUsageRecord, ModuleRecord, OrphanFileFinding,
+    OrphanKind, ProjectConfig, ReportV2, ResolvedImportRecord, RouteEntrypointFinding,
+    SummaryCounts, UnusedImportFinding,
 };
 use crate::parser::parse_module_source;
 use crate::resolve::{resolve_import_target, unresolved_import};
+use crate::suppressions::{apply_suppressions, load_project_suppressions};
 
 const DEFAULT_CONFIG_FILENAME: &str = "kratos.config.json";
 
@@ -189,29 +191,38 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         }
     }
 
+    let mut findings = FindingSet {
+        broken_imports: broken_imports,
+        orphan_files,
+        dead_exports,
+        unused_imports,
+        route_entrypoints,
+        deletion_candidates,
+    };
+    let suppressions = load_project_suppressions(config);
+    let suppressed_findings = apply_suppressions(&mut findings, &suppressions);
+
     let mut report = ReportV2::new(config.root.clone());
     report.generated_at = Some(current_timestamp());
     report.config_path = config.config_path.clone().or_else(|| {
         let candidate = config.root.join(DEFAULT_CONFIG_FILENAME);
         candidate.exists().then_some(candidate)
     });
-    report.summary.files_scanned = modules.len();
-    report.summary.entrypoints = modules
-        .values()
-        .filter(|module| module.entrypoint_kind.is_some())
-        .count();
-    report.summary.broken_imports = broken_imports.len();
-    report.summary.orphan_files = orphan_files.len();
-    report.summary.dead_exports = dead_exports.len();
-    report.summary.unused_imports = unused_imports.len();
-    report.summary.route_entrypoints = route_entrypoints.len();
-    report.summary.deletion_candidates = deletion_candidates.len();
-    report.findings.broken_imports = broken_imports;
-    report.findings.orphan_files = orphan_files;
-    report.findings.dead_exports = dead_exports;
-    report.findings.unused_imports = unused_imports;
-    report.findings.route_entrypoints = route_entrypoints;
-    report.findings.deletion_candidates = deletion_candidates;
+    report.summary = SummaryCounts {
+        files_scanned: modules.len(),
+        entrypoints: modules
+            .values()
+            .filter(|module| module.entrypoint_kind.is_some())
+            .count(),
+        broken_imports: findings.broken_imports.len(),
+        orphan_files: findings.orphan_files.len(),
+        dead_exports: findings.dead_exports.len(),
+        unused_imports: findings.unused_imports.len(),
+        route_entrypoints: findings.route_entrypoints.len(),
+        deletion_candidates: findings.deletion_candidates.len(),
+        suppressed_findings,
+    };
+    report.findings = findings;
     report.modules = modules
         .into_values()
         .map(|mut module| {

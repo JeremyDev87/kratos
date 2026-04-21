@@ -6,6 +6,7 @@ use kratos_core::jsonc::parse_loose_json;
 use kratos_core::jsonc::JsonValue;
 use kratos_core::model::ImportResolutionKind;
 use kratos_core::resolve::resolve_import_target;
+use kratos_core::suppressions::SuppressionKind;
 
 #[test]
 fn load_project_config_parses_comments_and_collects_entries() {
@@ -96,6 +97,73 @@ fn load_project_config_parses_comments_and_collects_entries() {
             .contains(&project.root().to_path_buf()),
         "empty export targets should be ignored"
     );
+}
+
+#[test]
+fn load_project_config_parses_suppressions_and_ignores_invalid_rules() {
+    let project = TestProject::new("suppression-config");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "suppressions": [
+    {
+      "kind": "brokenImport",
+      "file": "src/app/main.ts",
+      "source": "./missing",
+      "reason": "known missing shim"
+    },
+    {
+      "kind": "deadExport",
+      "file": "src/components/LazyCard.tsx",
+      "export": "default",
+      "reason": "loaded dynamically"
+    },
+    {
+      "kind": "deadExport",
+      "file": "../escape.ts",
+      "reason": "should be ignored"
+    },
+    {
+      "kind": "unusedImport",
+      "file": "/tmp/abs.ts",
+      "source": "./abs",
+      "local": "abs",
+      "reason": "should be ignored"
+    },
+    {
+      "kind": "unusedImport",
+      "file": "src/app/main.ts",
+      "source": 123,
+      "local": "main",
+      "reason": "should be ignored"
+    },
+    {
+      "kind": "deadExport",
+      "file": "src/app/main.ts",
+      "reason": ""
+    }
+  ]
+}
+"#,
+    );
+
+    let config = load_project_config(project.root()).expect("config should load");
+
+    assert_eq!(config.suppressions.len(), 2);
+    assert_eq!(config.suppressions[0].kind, SuppressionKind::BrokenImport);
+    assert_eq!(
+        config.suppressions[0].file,
+        project.root().join("src/app/main.ts")
+    );
+    assert_eq!(config.suppressions[0].source.as_deref(), Some("./missing"));
+    assert_eq!(config.suppressions[0].reason, "known missing shim");
+    assert_eq!(config.suppressions[1].kind, SuppressionKind::DeadExport);
+    assert_eq!(
+        config.suppressions[1].file,
+        project.root().join("src/components/LazyCard.tsx")
+    );
+    assert_eq!(config.suppressions[1].export.as_deref(), Some("default"));
+    assert_eq!(config.suppressions[1].reason, "loaded dynamically");
 }
 
 #[test]
