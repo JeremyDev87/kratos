@@ -1,6 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+mod support;
+
+use support::cli::{run_cli, run_cli_in_dir};
+use support::fs::{copy_demo_app, repo_root};
 
 #[test]
 fn root_help_matches_expected_shape() {
@@ -92,10 +93,6 @@ fn clean_accepts_legacy_v1_reports_through_cli() {
     assert!(String::from_utf8_lossy(&apply.stdout).contains("Kratos clean deleted 2 file(s)."));
     assert!(!project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(!project_root.join("src/lib/broken.ts").exists());
-}
-
-fn run_cli(args: &[&str]) -> std::process::Output {
-    run_cli_in_dir(&repo_root(), args)
 }
 
 #[test]
@@ -354,57 +351,4 @@ fn empty_inline_boolean_flags_stay_falsey_like_js() {
     assert!(clean_stdout.contains("Kratos clean dry run."));
     assert!(project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(project_root.join("src/lib/broken.ts").exists());
-}
-
-fn run_cli_in_dir(cwd: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(cli_binary())
-        .args(args)
-        .current_dir(cwd)
-        .output()
-        .expect("cli command should run")
-}
-
-fn cli_binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_kratos-cli"))
-}
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("workspace root should exist")
-        .to_path_buf()
-}
-
-fn copy_demo_app(label: &str) -> PathBuf {
-    let destination = temp_dir(label).join("demo-app");
-    copy_directory(&repo_root().join("fixtures/demo-app"), &destination);
-    destination
-}
-
-fn copy_directory(source: &Path, destination: &Path) {
-    std::fs::create_dir_all(destination).expect("destination directory should exist");
-
-    for entry in std::fs::read_dir(source).expect("source directory should be readable") {
-        let entry = entry.expect("directory entry should load");
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let file_type = entry.file_type().expect("file type should load");
-
-        if file_type.is_dir() {
-            copy_directory(&source_path, &destination_path);
-        } else if file_type.is_file() {
-            std::fs::copy(&source_path, &destination_path).expect("file should copy");
-        }
-    }
-}
-
-fn temp_dir(label: &str) -> PathBuf {
-    let unique = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be valid")
-        .as_nanos();
-    let path = std::env::temp_dir().join(format!("kratos-cli-{label}-{unique}"));
-    std::fs::create_dir_all(&path).expect("temp dir should be created");
-    path
 }
