@@ -328,6 +328,1258 @@ module.exports = Main;
 }
 
 #[test]
+fn parser_marks_lazy_default_usage_for_react_lazy() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const LazyChunk = React.lazy(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    dbg!(&parsed.imports);
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_named_react_lazy_import() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import { lazy } from "react";
+
+const LazyChunk = lazy(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_commonjs_react_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+const React = require("react");
+
+const LazyChunk = React.lazy(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_nested_block_var_commonjs_react_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+function build() {
+  if (enabled) {
+    var React = require("react");
+    return React.lazy(() => import("./Chunk"));
+  }
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_ts_import_equals_react_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React = require("react");
+
+const LazyChunk = React.lazy(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_react_lazy_alias() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const load = React.lazy;
+const LazyChunk = load(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_react_lazy_loader_identifier() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const loader = () => import("./Chunk");
+const LazyChunk = React.lazy(loader);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_hoisted_function_loader_identifier() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const LazyChunk = React.lazy(loader);
+
+function loader() {
+  return import("./Chunk");
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_react_lazy_loader_alias_identifier() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const loader = () => import("./Chunk");
+const alias = loader;
+const LazyChunk = React.lazy(alias);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_lazy_default_usage_for_nested_loader_alias_after_non_loader_shadow() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const load = () => import("./OuterChunk");
+
+function build() {
+  const load = 0;
+
+  {
+    const load = () => import("./InnerChunk");
+    return React.lazy(load);
+  }
+}
+
+const LazyChunk = build();
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./InnerChunk")
+        .expect("inner dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Default
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("default")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_next_dynamic_then_selection() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => ({ default: module.Named }))
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_block_alias_selection() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => {
+    const selected = module.Named;
+    return { default: selected };
+  })
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_named_callback_identifier() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const select = (module) => ({ default: module.Named });
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(select)
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_does_not_treat_hoisted_var_then_callback_alias_as_named_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(select)
+);
+
+var select = (module) => ({ default: module.Named });
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_marks_named_usage_for_hoisted_then_function_callback() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(select)
+);
+
+function select(module) {
+  return { default: module.Named };
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_nested_block_followed_by_outer_return() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => {
+    {
+      const selected = module.Named;
+    }
+
+    return { default: module.Named };
+  })
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_alias_selection_with_unrelated_local() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => {
+    const selected = module.Named;
+    const noop = 1;
+    return { default: selected };
+  })
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_destructured_local_alias() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => {
+    const { Named: selected } = module;
+    return { default: selected };
+  })
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_local_function_alias_call() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => {
+    function select() {
+      return module.Named;
+    }
+
+    return { default: select() };
+  })
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_nested_block_alias_selection() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then((module) => {
+    {
+      const selected = module.Named;
+      return { default: selected };
+    }
+  })
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_next_dynamic_loader_alias_identifier() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const loader = () =>
+  import("./Chunk").then(({ Named }) => ({ default: Named }));
+const alias = loader;
+const LazyChunk = dynamic(alias);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_next_dynamic_alias() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const load = dynamic;
+const LazyChunk = load(() =>
+  import("./Chunk").then(({ Named }) => ({ default: Named }))
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_commonjs_next_dynamic_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+const dynamic = require("next/dynamic");
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(({ Named }) => ({ default: Named }))
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_does_not_treat_direct_commonjs_next_dynamic_call_as_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+const LazyChunk = require("next/dynamic")(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_marks_named_usage_for_ts_import_equals_next_dynamic_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic = require("next/dynamic");
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(({ Named }) => ({ default: Named }))
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_nested_commonjs_next_dynamic_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+function build() {
+  const dynamic = require("next/dynamic");
+  return dynamic(() =>
+    import("./Chunk").then(({ Named }) => ({ default: Named }))
+  );
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_direct_commonjs_next_dynamic_default_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+const LazyChunk = require("next/dynamic").default(() =>
+  import("./Chunk").then(({ Named }) => ({ default: Named }))
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_destructured_then_selection() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(({ Named }) => ({ default: Named }))
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_marks_named_usage_for_then_selection_with_reject_handler() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() =>
+  import("./Chunk").then(
+    ({ Named }) => ({ default: Named }),
+    () => fallback
+  )
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert_eq!(dynamic_import.specifiers.len(), 1);
+    assert_eq!(
+        dynamic_import.specifiers[0].kind,
+        ImportSpecifierKind::Named
+    );
+    assert_eq!(
+        dynamic_import.specifiers[0].imported.as_deref(),
+        Some("Named")
+    );
+    assert_eq!(dynamic_import.specifiers[0].local, None);
+}
+
+#[test]
+fn parser_does_not_treat_shadowed_wrapper_names_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import { lazy } from "react";
+import dynamic from "next/dynamic";
+
+function build(lazy: unknown, dynamic: unknown) {
+  const A = lazy(() => import("./LazyChunk"));
+  const B = dynamic(() => import("./DynamicChunk"));
+  return { A, B };
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let lazy_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./LazyChunk")
+        .expect("lazy import should be recorded");
+    assert_eq!(lazy_import.kind, ImportKind::Dynamic);
+    assert!(lazy_import.specifiers.is_empty());
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./DynamicChunk")
+        .expect("dynamic import should be recorded");
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_hoisted_wrapper_names_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+function build() {
+  const LazyChunk = React.lazy(() => import("./Chunk"));
+  var React = { lazy(loader: unknown) { return loader; } };
+  return LazyChunk;
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_forward_referenced_commonjs_react_wrapper_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+React.lazy(() => import("./Chunk"));
+const React = require("react");
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_forward_referenced_commonjs_next_dynamic_wrapper_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+dynamic(() => import("./Chunk"));
+const dynamic = require("next/dynamic");
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_next_dynamic_namespace_import_as_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import * as dynamic from "next/dynamic";
+
+const LazyChunk = dynamic(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_top_level_shadow_of_nested_wrapper_alias_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+function seed() {
+  const dynamic = require("next/dynamic");
+  return dynamic;
+}
+
+const dynamic = (loader) => loader;
+const LazyChunk = dynamic(() => import("./Chunk"));
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_shadowed_react_lazy_alias_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const load = React.lazy;
+
+function build() {
+  const load = (loader: unknown) => loader;
+  return load(() => import("./Chunk"));
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_hoisted_react_lazy_alias_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const load = React.lazy;
+
+function build() {
+  const LazyChunk = load(() => import("./Chunk"));
+  var load = (loader: unknown) => loader;
+  return LazyChunk;
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_shadowed_require_react_alias_as_dynamic_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+function build(require: unknown) {
+  const React = require("react");
+  const load = React.lazy;
+  return load(() => import("./Chunk"));
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_does_not_treat_shadowed_require_next_dynamic_default_as_wrapper() {
+    let parsed = parse_module_source(
+        Path::new("index.js"),
+        r#"
+function build(require) {
+  return require("next/dynamic").default(() => import("./Chunk"));
+}
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
+fn parser_falls_back_for_complex_dynamic_callbacks() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+import React from "react";
+
+const LazyChunk = React.lazy(() =>
+  condition ? import("./Chunk") : fallback("./Chunk")
+);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
 fn parser_keeps_named_default_declarations_as_default_only() {
     let parsed = parse_module_source(
         Path::new("index.tsx"),
