@@ -24,9 +24,15 @@ pub fn format_summary_report(
             "Deletion candidates: {}",
             report.summary.deletion_candidates
         ),
-        String::new(),
-        format!("Saved report: {}", path_to_string(report_path)),
     ];
+    if report.summary.suppressed_findings > 0 {
+        lines.push(format!(
+            "Suppressed findings: {}",
+            report.summary.suppressed_findings
+        ));
+    }
+    lines.push(String::new());
+    lines.push(format!("Saved report: {}", path_to_string(report_path)));
 
     append_preview(
         &mut lines,
@@ -86,8 +92,14 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
             "- Deletion candidates: {}",
             report.summary.deletion_candidates
         ),
-        String::new(),
     ];
+    if report.summary.suppressed_findings > 0 {
+        lines.push(format!(
+            "- Suppressed findings: {}",
+            report.summary.suppressed_findings
+        ));
+    }
+    lines.push(String::new());
 
     push_markdown_section(
         &mut lines,

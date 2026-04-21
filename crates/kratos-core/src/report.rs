@@ -167,16 +167,30 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
 }
 
 fn serialize_summary(summary: &SummaryCounts) -> Value {
-    json!({
-        "filesScanned": summary.files_scanned,
-        "entrypoints": summary.entrypoints,
-        "brokenImports": summary.broken_imports,
-        "orphanFiles": summary.orphan_files,
-        "deadExports": summary.dead_exports,
-        "unusedImports": summary.unused_imports,
-        "routeEntrypoints": summary.route_entrypoints,
-        "deletionCandidates": summary.deletion_candidates,
-    })
+    let mut summary_value = serde_json::Map::new();
+    summary_value.insert("filesScanned".to_string(), json!(summary.files_scanned));
+    summary_value.insert("entrypoints".to_string(), json!(summary.entrypoints));
+    summary_value.insert("brokenImports".to_string(), json!(summary.broken_imports));
+    summary_value.insert("orphanFiles".to_string(), json!(summary.orphan_files));
+    summary_value.insert("deadExports".to_string(), json!(summary.dead_exports));
+    summary_value.insert("unusedImports".to_string(), json!(summary.unused_imports));
+    summary_value.insert(
+        "routeEntrypoints".to_string(),
+        json!(summary.route_entrypoints),
+    );
+    summary_value.insert(
+        "deletionCandidates".to_string(),
+        json!(summary.deletion_candidates),
+    );
+
+    if summary.suppressed_findings > 0 {
+        summary_value.insert(
+            "suppressedFindings".to_string(),
+            json!(summary.suppressed_findings),
+        );
+    }
+
+    Value::Object(summary_value)
 }
 
 fn serialize_broken_import(item: &BrokenImportFinding) -> Value {
@@ -253,6 +267,7 @@ fn parse_summary(value: Option<&Value>) -> SummaryCounts {
         unused_imports: read_usize(value, "unusedImports"),
         route_entrypoints: read_usize(value, "routeEntrypoints"),
         deletion_candidates: read_usize(value, "deletionCandidates"),
+        suppressed_findings: read_usize(value, "suppressedFindings"),
     }
 }
 
@@ -273,6 +288,11 @@ fn parse_required_summary(value: &serde_json::Map<String, Value>) -> KratosResul
             value,
             "deletionCandidates",
             "summary.deletionCandidates",
+        )?,
+        suppressed_findings: read_optional_usize(
+            value,
+            "suppressedFindings",
+            "summary.suppressedFindings",
         )?,
     })
 }
@@ -812,6 +832,23 @@ fn read_required_usize(
         .and_then(Value::as_u64)
         .map(|number| number as usize)
         .ok_or_else(|| KratosError::Json(format!("Report is missing required number `{path}`")))
+}
+
+fn read_optional_usize(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<usize> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(0),
+        Some(Value::Number(number)) => number
+            .as_u64()
+            .map(|number| number as usize)
+            .ok_or_else(|| KratosError::Json(format!("Report has invalid number `{path}`"))),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid number `{path}`"
+        ))),
+    }
 }
 
 fn read_required_f64(

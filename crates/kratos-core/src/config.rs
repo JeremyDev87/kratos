@@ -5,6 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::error::KratosResult;
 use crate::jsonc::{parse_loose_json, JsonValue};
 use crate::model::{PathAlias, ProjectConfig};
+use crate::suppressions::{parse_suppression_rules, SuppressionSource};
 
 const DEFAULT_CONFIG_FILENAME: &str = "kratos.config.json";
 const PACKAGE_ENTRY_EXTENSIONS: &[&str] = &[
@@ -76,6 +77,11 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
             base_url.as_deref(),
         )?,
         external_packages: collect_external_packages(&package_json),
+        suppressions: parse_suppression_rules(
+            &root,
+            user_config.get("suppressions"),
+            SuppressionSource::Config,
+        ),
     })
 }
 
@@ -374,7 +380,7 @@ fn normalize_project_root(root: PathBuf) -> PathBuf {
     normalize_path(absolute)
 }
 
-fn resolve_path(root: &Path, value: &str) -> PathBuf {
+pub(crate) fn resolve_path(root: &Path, value: &str) -> PathBuf {
     let path = Path::new(value);
 
     if path.is_absolute() {
