@@ -50,7 +50,10 @@ test("packed root package installs the platform addon through optionalDependenci
   const addonPackageName = resolveAddonPackageName();
 
   const installedRootPackage = JSON.parse(
-    await fsp.readFile(path.join(installRoot, "node_modules", "kratos", "package.json"), "utf8"),
+    await fsp.readFile(
+      path.join(installRoot, "node_modules", ...packageJson.name.split("/"), "package.json"),
+      "utf8",
+    ),
   );
   const expectedAddonPackages = Object.keys(addonTarballs).sort();
 
@@ -124,7 +127,13 @@ test("packed root package boots the actual native addon for the current platform
 });
 
 async function assertWindowsCmdShimTargetsInstalledLauncher(installRoot) {
-  const launcherPath = path.join(installRoot, "node_modules", "kratos", "bin", "kratos.js");
+  const launcherPath = path.join(
+    installRoot,
+    "node_modules",
+    ...packageJson.name.split("/"),
+    "bin",
+    "kratos.js",
+  );
   let cmdShimBody;
 
   if (process.platform === "win32") {
@@ -144,7 +153,11 @@ async function assertWindowsCmdShimTargetsInstalledLauncher(installRoot) {
     cmdShimBody = await fsp.readFile(`${shimTarget}.cmd`, "utf8");
   }
 
-  assert.match(cmdShimBody, /(?:node_modules|\.{2})\\kratos\\bin\\kratos\.js/i);
+  const packagePathPattern = packageJson.name.split("/").map(escapeForRegex).join("\\\\");
+  assert.match(
+    cmdShimBody,
+    new RegExp(`(?:node_modules|\\.{2})\\\\${packagePathPattern}\\\\bin\\\\kratos\\.js`, "i"),
+  );
   assert.match(cmdShimBody, /%\*/);
 }
 
@@ -171,7 +184,7 @@ async function installPackedRootPackage(tempRoot, rootPackage, addonTarballs) {
         name: "kratos-package-smoke",
         private: true,
         dependencies: {
-          kratos: `file:${rootPackage.tarballPath}`,
+          [packageJson.name]: `file:${rootPackage.tarballPath}`,
         },
         overrides: Object.fromEntries(
           Object.entries(addonTarballs).map(([packageName, entry]) => [
@@ -210,7 +223,7 @@ async function packAddonTarballs(tempRoot, { outputPath, nativeLibraryPath } = {
 
   for (const target of ADDON_TARGETS) {
     const packageName = resolveAddonPackageName(target.platform, target.arch);
-    const packageSlug = packageName.replace("@kratos/", "");
+    const packageSlug = packageName.split("/").pop();
     const packageRoot = path.join(tempRoot, `${packageSlug}-package`);
     const useNativeAddon = packageName === currentAddonPackageName;
 
@@ -329,4 +342,8 @@ function runInstalledKratos(installRoot, args, options = {}) {
   }
 
   return runCommand(binaryPath, args, options);
+}
+
+function escapeForRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

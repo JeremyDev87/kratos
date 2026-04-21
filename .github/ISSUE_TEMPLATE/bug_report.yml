@@ -29,7 +29,7 @@ body:
     attributes:
       label: Command
       description: The exact Kratos command you ran
-      placeholder: npx kratos scan ./my-app
+      placeholder: npx @jeremyfellaz/kratos scan ./my-app
     validations:
       required: true
   - type: textarea

@@ -17,11 +17,11 @@ const skipDirectExecutableTests =
     : false;
 
 test("resolveAddonPackageName maps supported targets", () => {
-  assert.equal(resolveAddonPackageName("darwin", "arm64"), "@kratos/darwin-arm64");
-  assert.equal(resolveAddonPackageName("darwin", "x64"), "@kratos/darwin-x64");
-  assert.equal(resolveAddonPackageName("linux", "x64"), "@kratos/linux-x64-gnu");
-  assert.equal(resolveAddonPackageName("linux", "arm64"), "@kratos/linux-arm64-gnu");
-  assert.equal(resolveAddonPackageName("win32", "x64"), "@kratos/win32-x64-msvc");
+  assert.equal(resolveAddonPackageName("darwin", "arm64"), "@jeremyfellaz/kratos-darwin-arm64");
+  assert.equal(resolveAddonPackageName("darwin", "x64"), "@jeremyfellaz/kratos-darwin-x64");
+  assert.equal(resolveAddonPackageName("linux", "x64"), "@jeremyfellaz/kratos-linux-x64-gnu");
+  assert.equal(resolveAddonPackageName("linux", "arm64"), "@jeremyfellaz/kratos-linux-arm64-gnu");
+  assert.equal(resolveAddonPackageName("win32", "x64"), "@jeremyfellaz/kratos-win32-x64-msvc");
   assert.throws(
     () => resolveAddonPackageName("linux", "ppc64"),
     /Unsupported platform\/arch/,
@@ -36,7 +36,7 @@ test("runLauncher forwards argv to runCli and returns its exit code", () => {
     platform: "darwin",
     arch: "arm64",
     requireFn(packageName) {
-      assert.equal(packageName, "@kratos/darwin-arm64");
+      assert.equal(packageName, "@jeremyfellaz/kratos-darwin-arm64");
       return {
         runCli(args) {
           receivedArgs = args;
@@ -59,7 +59,7 @@ test("runLauncher formats missing addon failures with Kratos prefix", () => {
     platform: "linux",
     arch: "x64",
     requireFn() {
-      throw new Error("Cannot find module '@kratos/linux-x64-gnu'");
+      throw new Error("Cannot find module '@jeremyfellaz/kratos-linux-x64-gnu'");
     },
     stderr,
   });
@@ -67,7 +67,7 @@ test("runLauncher formats missing addon failures with Kratos prefix", () => {
   assert.equal(exitCode, 1);
   assert.match(
     stderr.read(),
-    /Kratos failed: Failed to load native addon package @kratos\/linux-x64-gnu:/,
+    /Kratos failed: Failed to load native addon package @jeremyfellaz\/kratos-linux-x64-gnu:/,
   );
 });
 

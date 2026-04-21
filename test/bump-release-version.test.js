@@ -18,11 +18,11 @@ test("normalizeReleaseTag accepts bare versions", () => {
 
 test("updatePackageManifest syncs root and optional dependency versions", () => {
   const pkg = {
-    name: "kratos",
+    name: "@jeremyfellaz/kratos",
     version: "0.2.0-alpha.1",
     optionalDependencies: {
-      "@kratos/darwin-arm64": "0.2.0-alpha.1",
-      "@kratos/linux-x64-gnu": "0.2.0-alpha.1",
+      "@jeremyfellaz/kratos-darwin-arm64": "0.2.0-alpha.1",
+      "@jeremyfellaz/kratos-linux-x64-gnu": "0.2.0-alpha.1",
     },
   };
 
@@ -30,8 +30,8 @@ test("updatePackageManifest syncs root and optional dependency versions", () => 
 
   assert.equal(updated.version, "0.2.0");
   assert.deepEqual(updated.optionalDependencies, {
-    "@kratos/darwin-arm64": "0.2.0",
-    "@kratos/linux-x64-gnu": "0.2.0",
+    "@jeremyfellaz/kratos-darwin-arm64": "0.2.0",
+    "@jeremyfellaz/kratos-linux-x64-gnu": "0.2.0",
   });
 });
 
@@ -61,11 +61,11 @@ test("bumpPackageVersion rewrites package.json from tag input", async () => {
     manifestPath,
     `${JSON.stringify(
       {
-        name: "kratos",
+        name: "@jeremyfellaz/kratos",
         version: "0.2.0-alpha.1",
         optionalDependencies: {
-          "@kratos/darwin-arm64": "0.2.0-alpha.1",
-          "@kratos/win32-x64-msvc": "0.2.0-alpha.1",
+          "@jeremyfellaz/kratos-darwin-arm64": "0.2.0-alpha.1",
+          "@jeremyfellaz/kratos-win32-x64-msvc": "0.2.0-alpha.1",
         },
       },
       null,
@@ -80,8 +80,8 @@ test("bumpPackageVersion rewrites package.json from tag input", async () => {
   assert.equal(result.tag, "v0.2.0");
   assert.equal(updated.version, "0.2.0");
   assert.deepEqual(updated.optionalDependencies, {
-    "@kratos/darwin-arm64": "0.2.0",
-    "@kratos/win32-x64-msvc": "0.2.0",
+    "@jeremyfellaz/kratos-darwin-arm64": "0.2.0",
+    "@jeremyfellaz/kratos-win32-x64-msvc": "0.2.0",
   });
 });
 
@@ -93,10 +93,10 @@ test("bumpPackageVersion rejects downgrades and same-version rewrites", async ()
     manifestPath,
     `${JSON.stringify(
       {
-        name: "kratos",
+        name: "@jeremyfellaz/kratos",
         version: "0.2.0-alpha.1",
         optionalDependencies: {
-          "@kratos/darwin-arm64": "0.2.0-alpha.1",
+          "@jeremyfellaz/kratos-darwin-arm64": "0.2.0-alpha.1",
         },
       },
       null,

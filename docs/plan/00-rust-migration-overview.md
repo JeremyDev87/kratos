@@ -2,7 +2,7 @@
 
 ## Objective
 
-Kratos를 현재의 Node/JS 구현에서 Rust 중심 구현으로 전환한다. 최종 사용자 경험은 계속 `npm install`, `npx kratos scan`, `npx kratos report`, `npx kratos clean`을 유지하고, 내부 런타임만 `Rust core + Rust CLI + Node launcher` 구조로 교체한다. 이번 전환은 제품 재작성이지 기능 확장이 아니므로, 현재 README에 문서화된 MVP 기능만 Rust로 다시 구현한다.
+Kratos를 현재의 Node/JS 구현에서 Rust 중심 구현으로 전환한다. 최종 사용자 경험은 계속 `npm install`, `npx @jeremyfellaz/kratos scan`, `npx @jeremyfellaz/kratos report`, `npx @jeremyfellaz/kratos clean`을 유지하고, 내부 런타임만 `Rust core + Rust CLI + Node launcher` 구조로 교체한다. 이번 전환은 제품 재작성이지 기능 확장이 아니므로, 현재 README에 문서화된 MVP 기능만 Rust로 다시 구현한다.
 
 ## Conflict Surface
 
