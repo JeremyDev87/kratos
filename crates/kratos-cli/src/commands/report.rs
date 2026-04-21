@@ -3,13 +3,11 @@ use std::io::Write;
 
 use clap::Parser;
 use kratos_core::report::parse_report_json;
+use kratos_core::report_format::{format_markdown_report, format_summary_report};
 use kratos_core::{KratosError, KratosResult};
 use serde_json::Value;
 
-use super::{
-    canonicalize_report_args, format_markdown_report, format_summary_report, resolve_report_input,
-    write_output, CommandSpec,
-};
+use super::{canonicalize_report_args, resolve_report_input, write_output, CommandSpec};
 
 pub const NAME: &str = "report";
 pub const SPEC: CommandSpec = CommandSpec {
@@ -41,7 +39,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
             let report = parse_report_json(&raw)?;
             write_output(
                 stdout,
-                &format_summary_report(&report, &report_path, "Kratos report."),
+                &format_summary_report(&report, &report_path, "Kratos report.")?,
             )?
         }
         "json" => write_output(
@@ -51,7 +49,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
         )?,
         "md" => {
             let report = parse_report_json(&raw)?;
-            write_output(stdout, &format_markdown_report(&report, &report_path))?
+            write_output(stdout, &format_markdown_report(&report, &report_path)?)?
         }
         other => {
             return Err(KratosError::Config(format!(
