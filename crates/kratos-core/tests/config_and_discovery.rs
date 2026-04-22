@@ -49,6 +49,7 @@ fn load_project_config_parses_comments_and_collects_entries() {
         "kratos.config.json",
         r#"{
   "ignore": ["custom-cache",],
+  "ignorePatterns": ["src/generated/**", "!src/generated/keep.ts"],
   "entry": ["src/main.ts", "./src/./main.ts"],
   "roots": ["src", "missing",],
 }
@@ -70,6 +71,13 @@ fn load_project_config_parses_comments_and_collects_entries() {
         .ignored_directories
         .iter()
         .any(|entry| entry == "custom-cache"));
+    assert_eq!(
+        config.ignore_patterns,
+        vec![
+            "src/generated/**".to_string(),
+            "!src/generated/keep.ts".to_string()
+        ]
+    );
     assert_eq!(
         config.explicit_entries,
         vec![project.root().join("src/main.ts")]
@@ -191,6 +199,28 @@ fn collect_source_files_skips_missing_roots_and_ignored_dirs() {
             project.root().join("src/nested/util.ts")
         ]
     );
+}
+
+#[test]
+fn collect_source_files_supports_gitignore_style_negated_patterns() {
+    let project = TestProject::new("ignore-patterns");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "ignorePatterns": ["node_modules/**", "!node_modules/@demo/keep.ts"]
+}
+"#,
+    );
+    project.write("src/main.ts", "export const main = true;\n");
+    project.write("node_modules/@demo/keep.ts", "export const keep = true;\n");
+    project.write("node_modules/@demo/drop.ts", "export const drop = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert!(discovered.contains(&project.root().join("src/main.ts")));
+    assert!(discovered.contains(&project.root().join("node_modules/@demo/keep.ts")));
+    assert!(!discovered.contains(&project.root().join("node_modules/@demo/drop.ts")));
 }
 
 #[test]

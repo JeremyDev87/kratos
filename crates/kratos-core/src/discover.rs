@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::KratosResult;
+use crate::ignore::IgnoreMatcher;
 use crate::model::ProjectConfig;
 
 const SOURCE_EXTENSIONS: &[&str] = &[".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"];
@@ -17,6 +18,7 @@ pub fn normalize_root(root: &Path) -> PathBuf {
 
 pub fn collect_source_files(config: &ProjectConfig) -> KratosResult<Vec<PathBuf>> {
     let mut discovered = std::collections::BTreeSet::new();
+    let ignore_matcher = IgnoreMatcher::new(&config.ignored_directories, &config.ignore_patterns);
 
     for root in &config.roots {
         let root = normalize_root(root);
@@ -25,7 +27,12 @@ pub fn collect_source_files(config: &ProjectConfig) -> KratosResult<Vec<PathBuf>
             continue;
         }
 
-        visit_directory(&root, &config.ignored_directories, &mut discovered)?;
+        let relative_root = to_project_relative_path(&root, &config.root);
+        if !relative_root.is_empty() && !ignore_matcher.should_traverse_dir(&relative_root) {
+            continue;
+        }
+
+        visit_directory(&root, &config.root, &ignore_matcher, &mut discovered)?;
     }
 
     Ok(discovered.into_iter().collect())
@@ -33,27 +40,29 @@ pub fn collect_source_files(config: &ProjectConfig) -> KratosResult<Vec<PathBuf>
 
 fn visit_directory(
     current: &Path,
-    ignored_directories: &[String],
+    project_root: &Path,
+    ignore_matcher: &IgnoreMatcher,
     discovered: &mut std::collections::BTreeSet<PathBuf>,
 ) -> KratosResult<()> {
     for entry in std::fs::read_dir(current)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
         let path = entry.path();
+        let relative_path = to_project_relative_path(&path, project_root);
 
         if file_type.is_dir() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-
-            if ignored_directories.iter().any(|ignored| ignored == &name) {
+            if !ignore_matcher.should_traverse_dir(&relative_path) {
                 continue;
             }
 
-            visit_directory(&path, ignored_directories, discovered)?;
+            visit_directory(&path, project_root, ignore_matcher, discovered)?;
             continue;
         }
 
-        if file_type.is_file() && is_source_path(&path) {
+        if file_type.is_file()
+            && is_source_path(&path)
+            && !ignore_matcher.is_ignored(&relative_path, false)
+        {
             discovered.insert(path);
         }
     }
@@ -69,4 +78,13 @@ fn is_source_path(path: &Path) -> bool {
     SOURCE_EXTENSIONS
         .iter()
         .any(|candidate| candidate.trim_start_matches('.') == extension)
+}
+
+fn to_project_relative_path(path: &Path, project_root: &Path) -> String {
+    path.strip_prefix(project_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_string()
 }
