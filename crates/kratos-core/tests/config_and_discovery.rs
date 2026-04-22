@@ -50,6 +50,7 @@ fn load_project_config_parses_comments_and_collects_entries() {
         "kratos.config.json",
         r#"{
   "ignore": ["custom-cache",],
+  "ignorePatterns": ["src/generated/**", "!src/generated/keep.ts"],
   "entry": ["src/main.ts", "./src/./main.ts"],
   "roots": ["src", "missing",],
 }
@@ -71,6 +72,13 @@ fn load_project_config_parses_comments_and_collects_entries() {
         .ignored_directories
         .iter()
         .any(|entry| entry == "custom-cache"));
+    assert_eq!(
+        config.ignore_patterns,
+        vec![
+            "src/generated/**".to_string(),
+            "!src/generated/keep.ts".to_string()
+        ]
+    );
     assert_eq!(
         config.explicit_entries,
         vec![project.root().join("src/main.ts")]
@@ -279,6 +287,132 @@ fn collect_source_files_skips_missing_roots_and_ignored_dirs() {
             project.root().join("src/nested/util.ts")
         ]
     );
+}
+
+#[test]
+fn collect_source_files_supports_gitignore_style_negated_patterns() {
+    let project = TestProject::new("ignore-patterns");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "ignorePatterns": ["node_modules/**", "!node_modules/@demo/keep.ts"]
+}
+"#,
+    );
+    project.write("src/main.ts", "export const main = true;\n");
+    project.write("node_modules/@demo/keep.ts", "export const keep = true;\n");
+    project.write("node_modules/@demo/drop.ts", "export const drop = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert!(discovered.contains(&project.root().join("src/main.ts")));
+    assert!(discovered.contains(&project.root().join("node_modules/@demo/keep.ts")));
+    assert!(!discovered.contains(&project.root().join("node_modules/@demo/drop.ts")));
+}
+
+#[test]
+fn collect_source_files_honors_explicit_roots_even_when_root_name_is_ignored_by_default() {
+    let project = TestProject::new("explicit-roots-override-default-ignores");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "roots": ["tests"]
+}
+"#,
+    );
+    project.write("tests/unit/sample.ts", "export const sample = true;\n");
+    project.write("tests/__fixtures__/skip.ts", "export const skip = true;\n");
+    project.write("src/main.ts", "export const main = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert_eq!(discovered, vec![project.root().join("tests/unit/sample.ts")]);
+}
+
+#[test]
+fn collect_source_files_still_respects_directory_only_ignore_patterns_inside_explicit_roots() {
+    for pattern in ["tests/", "/tests/"] {
+        let project_name = format!("explicit-roots-respect-patterns-{}", pattern.len());
+        let project = TestProject::new(&project_name);
+        project.write(
+            "kratos.config.json",
+            &format!(
+                r#"{{
+  "roots": ["tests"],
+  "ignorePatterns": ["{pattern}"]
+}}
+"#
+            ),
+        );
+        project.write("tests/sample.ts", "export const sample = true;\n");
+
+        let config = load_project_config(project.root()).expect("config should load");
+        let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+        assert!(
+            discovered.is_empty(),
+            "directory-only ignore pattern {pattern} should still suppress the explicit root contents"
+        );
+    }
+}
+
+#[test]
+fn collect_source_files_keeps_anchored_negated_double_star_descendants() {
+    let project = TestProject::new("anchored-negated-double-star");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "ignorePatterns": ["src/**", "!/src/**/keep.ts"]
+}
+"#,
+    );
+    project.write("src/foo/keep.ts", "export const keep = true;\n");
+    project.write("src/foo/drop.ts", "export const drop = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert_eq!(discovered, vec![project.root().join("src/foo/keep.ts")]);
+}
+
+#[test]
+fn collect_source_files_does_not_reopen_unrelated_ignored_trees_for_negations() {
+    let project = TestProject::new("unrelated-negation-does-not-reopen");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "ignorePatterns": ["node_modules/**", "!src/generated/keep.ts"]
+}
+"#,
+    );
+    project.write("src/generated/keep.ts", "export const keep = true;\n");
+    project.write("node_modules/pkg/src/generated/keep.ts", "export const nested = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert_eq!(discovered, vec![project.root().join("src/generated/keep.ts")]);
+}
+
+#[test]
+fn collect_source_files_respects_last_matching_rule_for_negated_descendants() {
+    let project = TestProject::new("ordered-negation-does-not-reopen");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "ignorePatterns": ["!src/generated/keep.ts", "src/generated/**"]
+}
+"#,
+    );
+    project.write("src/generated/keep.ts", "export const keep = true;\n");
+    project.write("src/generated/drop.ts", "export const drop = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert!(discovered.is_empty());
 }
 
 #[test]
