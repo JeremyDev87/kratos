@@ -1,6 +1,11 @@
 Kratos report.
 
-Root: <ROOT>
+Project:
+- Root: <ROOT>
+- Generated: <GENERATED_AT>
+- Saved report: <REPORT>
+
+Finding counts:
 Files scanned: 5
 Entrypoints: 1
 Broken imports: 1
@@ -10,19 +15,27 @@ Unused imports: 0
 Route entrypoints: 1
 Deletion candidates: 2
 
-Saved report: <REPORT>
+Findings preview:
 
 Broken imports:
-- <ROOT>/src/lib/broken.ts -> ./missing-helper
+- src/lib/broken.ts -> ./missing-helper (static)
 
 Orphan files:
-- <ROOT>/src/components/DeadWidget.tsx
-- <ROOT>/src/lib/broken.ts
+- src/components/DeadWidget.tsx [0.92] Component-like module has no inbound references.
+- src/lib/broken.ts [0.88] Module has no inbound references and is not treated as an entrypoint.
 
 Dead exports:
-- <ROOT>/src/components/DeadWidget.tsx#DeadWidget
-- <ROOT>/src/lib/broken.ts#brokenFeature
-- <ROOT>/src/lib/math.ts#multiply
+- src/components/DeadWidget.tsx#DeadWidget
+- src/lib/broken.ts#brokenFeature
+- src/lib/math.ts#multiply
 
 Route entrypoints:
-- <ROOT>/pages/home.tsx (next-pages-route)
+- pages/home.tsx (next-pages-route)
+
+Deletion candidates:
+- src/components/DeadWidget.tsx [0.92] Component-like module has no inbound references.
+- src/lib/broken.ts [0.88] Module has no inbound references and is not treated as an entrypoint.
+
+Next steps:
+- kratos report <REPORT> --format md
+- kratos clean <REPORT> --dry-run
