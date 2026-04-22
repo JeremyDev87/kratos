@@ -11,6 +11,8 @@ use crate::report::parse_report_json;
 pub struct CleanOutcome {
     pub deleted_files: usize,
     pub skipped_files: usize,
+    pub deleted_paths: Vec<PathBuf>,
+    pub skipped_paths: Vec<PathBuf>,
 }
 
 pub fn clean_from_report_path(
@@ -54,6 +56,13 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
         return Ok(CleanOutcome {
             deleted_files: 0,
             skipped_files: report.findings.deletion_candidates.len(),
+            deleted_paths: Vec::new(),
+            skipped_paths: report
+                .findings
+                .deletion_candidates
+                .iter()
+                .map(|candidate| candidate.file.clone())
+                .collect(),
         });
     }
 
@@ -66,11 +75,13 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
 
         if !is_within_directory(&report_root_path, &candidate_path) {
             outcome.skipped_files += 1;
+            outcome.skipped_paths.push(candidate_path);
             continue;
         }
 
         if !file_exists(&candidate_path) {
             outcome.skipped_files += 1;
+            outcome.skipped_paths.push(candidate_path);
             continue;
         }
 
@@ -81,6 +92,7 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
 
         if !is_within_directory(&deletion_root, &candidate_parent) {
             outcome.skipped_files += 1;
+            outcome.skipped_paths.push(candidate_path);
             continue;
         }
 
@@ -88,9 +100,11 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
             Ok(()) => {
                 remove_empty_directories(candidate_parent_path, &report_root_path)?;
                 outcome.deleted_files += 1;
+                outcome.deleted_paths.push(candidate_path);
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 outcome.skipped_files += 1;
+                outcome.skipped_paths.push(candidate_path);
             }
             Err(error) => return Err(error.into()),
         }

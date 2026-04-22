@@ -10,7 +10,7 @@ fn root_help_matches_expected_shape() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--dry-run|--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
     );
 }
 
@@ -21,7 +21,7 @@ fn unknown_command_returns_help_and_exit_code_one() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--dry-run|--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
     );
 }
 
@@ -358,7 +358,7 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
     assert!(dry_run.status.success());
     let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
     assert!(dry_run_stdout.contains("Kratos clean dry run."));
-    assert!(dry_run_stdout.contains(&dead_file.display().to_string()));
+    assert!(dry_run_stdout.contains("dead.txt"));
     assert!(dead_file.exists());
 
     let apply = run_cli_in_dir(
@@ -391,6 +391,40 @@ fn scan_output_empty_string_defaults_and_missing_value_errors() {
         !project_root.join("--json").exists(),
         "missing output value should not create a stray report file"
     );
+}
+
+#[test]
+fn clean_supports_explicit_dry_run_and_rejects_conflicting_flags() {
+    let project_root = copy_demo_app("cli-clean-flags");
+    let report_path = project_root.join(".kratos/latest-report.json");
+
+    let prepare_report = run_cli_in_dir(&project_root, &["scan"]);
+    assert!(prepare_report.status.success());
+    assert!(report_path.exists());
+
+    let dry_run = run_cli_in_dir(
+        &project_root,
+        &[
+            "clean",
+            "--dry-run",
+            report_path.to_str().expect("path should be utf8"),
+        ],
+    );
+    assert!(dry_run.status.success());
+    assert!(String::from_utf8_lossy(&dry_run.stdout).contains("Kratos clean dry run."));
+
+    let conflict = run_cli_in_dir(
+        &project_root,
+        &[
+            "clean",
+            "--dry-run",
+            "--apply",
+            report_path.to_str().expect("path should be utf8"),
+        ],
+    );
+    assert_eq!(conflict.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&conflict.stderr)
+        .contains("Kratos failed: Config error: --apply and --dry-run cannot be used together"));
 }
 
 #[test]
