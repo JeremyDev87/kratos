@@ -4,6 +4,7 @@ pub mod config;
 pub mod discover;
 pub mod entrypoints;
 pub mod error;
+mod ignore;
 pub mod jsonc;
 pub mod model;
 pub mod parser;
