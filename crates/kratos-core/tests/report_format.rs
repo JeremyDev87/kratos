@@ -58,6 +58,32 @@ fn incomplete_future_schema_reports_fail_fast_instead_of_rendering_defaults() {
     assert!(error.to_string().contains("required object `summary`"));
 }
 
+#[test]
+fn next_steps_quote_report_paths_with_spaces() {
+    let report = parse_report_json(
+        "{\"schemaVersion\":2,\"project\":{\"root\":\"/tmp/demo root\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"graph\":{\"modules\":[]}}",
+    )
+    .expect("report should parse");
+    let report_path = Path::new("/tmp/demo root/.kratos/latest report.json");
+
+    let summary = format_summary_report(&report, report_path, "Kratos report.")
+        .expect("summary should format");
+    let markdown = format_markdown_report(&report, report_path).expect("markdown should format");
+
+    assert!(summary.contains(
+        "kratos report '/tmp/demo root/.kratos/latest report.json' --format md"
+    ));
+    assert!(summary.contains(
+        "kratos clean '/tmp/demo root/.kratos/latest report.json'"
+    ));
+    assert!(markdown.contains(
+        "`kratos report '/tmp/demo root/.kratos/latest report.json' --format md`"
+    ));
+    assert!(markdown.contains(
+        "`kratos clean '/tmp/demo root/.kratos/latest report.json'`"
+    ));
+}
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()

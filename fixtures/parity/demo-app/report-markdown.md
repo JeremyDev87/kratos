@@ -15,30 +15,35 @@
 - Route entrypoints: 1
 - Deletion candidates: 2
 
-## Broken imports
+## Next Steps
 
-- <ROOT>/src/lib/broken.ts -> `./missing-helper`
+- `kratos report '<REPORT>' --format md`
+- `kratos clean '<REPORT>'`
 
-## Orphan files
+## Broken imports (1)
 
-- <ROOT>/src/components/DeadWidget.tsx (Component-like module has no inbound references.)
-- <ROOT>/src/lib/broken.ts (Module has no inbound references and is not treated as an entrypoint.)
+- src/lib/broken.ts -> `./missing-helper` (static)
 
-## Dead exports
+## Orphan files (2)
 
-- <ROOT>/src/components/DeadWidget.tsx -> `DeadWidget`
-- <ROOT>/src/lib/broken.ts -> `brokenFeature`
-- <ROOT>/src/lib/math.ts -> `multiply`
+- src/components/DeadWidget.tsx (Component-like module has no inbound references., confidence 0.92)
+- src/lib/broken.ts (Module has no inbound references and is not treated as an entrypoint., confidence 0.88)
 
-## Unused imports
+## Dead exports (3)
+
+- src/components/DeadWidget.tsx -> `DeadWidget`
+- src/lib/broken.ts -> `brokenFeature`
+- src/lib/math.ts -> `multiply`
+
+## Unused imports (0)
 
 - None
 
-## Route entrypoints
+## Route entrypoints (1)
 
-- <ROOT>/pages/home.tsx (next-pages-route)
+- pages/home.tsx (next-pages-route)
 
-## Deletion candidates
+## Deletion candidates (2)
 
-- <ROOT>/src/components/DeadWidget.tsx (Component-like module has no inbound references., confidence 0.92)
-- <ROOT>/src/lib/broken.ts (Module has no inbound references and is not treated as an entrypoint., confidence 0.88)
+- src/components/DeadWidget.tsx (Component-like module has no inbound references., confidence 0.92, safe true)
+- src/lib/broken.ts (Module has no inbound references and is not treated as an entrypoint., confidence 0.88, safe true)

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::model::ReportV2;
-use crate::report::{entrypoint_kind_to_string, path_to_string};
+use crate::report::{entrypoint_kind_to_string, import_kind_to_string, path_to_string};
 use crate::KratosResult;
 
 pub fn format_summary_report(
@@ -12,7 +12,20 @@ pub fn format_summary_report(
     let mut lines = vec![
         title.to_string(),
         String::new(),
-        format!("Root: {}", path_to_string(&report.root)),
+        "Project:".to_string(),
+        format!("- Root: {}", path_to_string(&report.root)),
+        format!(
+            "- Generated: {}",
+            report.generated_at.as_deref().unwrap_or("undefined")
+        ),
+        format!("- Saved report: {}", path_to_string(report_path)),
+    ];
+    if let Some(config_path) = &report.config_path {
+        lines.push(format!("- Config: {}", format_project_path(report, config_path)));
+    }
+    lines.extend([
+        String::new(),
+        "Finding counts:".to_string(),
         format!("Files scanned: {}", report.summary.files_scanned),
         format!("Entrypoints: {}", report.summary.entrypoints),
         format!("Broken imports: {}", report.summary.broken_imports),
@@ -24,7 +37,7 @@ pub fn format_summary_report(
             "Deletion candidates: {}",
             report.summary.deletion_candidates
         ),
-    ];
+    ]);
     if report.summary.suppressed_findings > 0 {
         lines.push(format!(
             "Suppressed findings: {}",
@@ -32,25 +45,52 @@ pub fn format_summary_report(
         ));
     }
     lines.push(String::new());
-    lines.push(format!("Saved report: {}", path_to_string(report_path)));
+    lines.push("Findings preview:".to_string());
 
     append_preview(
         &mut lines,
         "Broken imports",
         &report.findings.broken_imports,
-        |item| format!("{} -> {}", path_to_string(&item.file), item.source),
+        |item| {
+            format!(
+                "{} -> {} ({})",
+                format_project_path(report, &item.file),
+                item.source,
+                import_kind_to_string(&item.kind)
+            )
+        },
     );
     append_preview(
         &mut lines,
         "Orphan files",
         &report.findings.orphan_files,
-        |item| path_to_string(&item.file),
+        |item| {
+            format!(
+                "{} [{:.2}] {}",
+                format_project_path(report, &item.file),
+                item.confidence,
+                item.reason
+            )
+        },
     );
     append_preview(
         &mut lines,
         "Dead exports",
         &report.findings.dead_exports,
-        |item| format!("{}#{}", path_to_string(&item.file), item.export_name),
+        |item| format!("{}#{}", format_project_path(report, &item.file), item.export_name),
+    );
+    append_preview(
+        &mut lines,
+        "Unused imports",
+        &report.findings.unused_imports,
+        |item| {
+            format!(
+                "{} -> {} from {}",
+                format_project_path(report, &item.file),
+                item.local,
+                item.source
+            )
+        },
     );
     append_preview(
         &mut lines,
@@ -59,11 +99,34 @@ pub fn format_summary_report(
         |item| {
             format!(
                 "{} ({})",
-                path_to_string(&item.file),
+                format_project_path(report, &item.file),
                 entrypoint_kind_to_string(&item.kind)
             )
         },
     );
+    append_preview(
+        &mut lines,
+        "Deletion candidates",
+        &report.findings.deletion_candidates,
+        |item| {
+            format!(
+                "{} [{:.2}] {}",
+                format_project_path(report, &item.file),
+                item.confidence,
+                item.reason
+            )
+        },
+    );
+    lines.push(String::new());
+    lines.push("Next steps:".to_string());
+    lines.push(format!(
+        "- kratos report {} --format md",
+        format_shell_argument(&path_to_string(report_path))
+    ));
+    lines.push(format!(
+        "- kratos clean {}",
+        format_shell_argument(&path_to_string(report_path))
+    ));
 
     Ok(lines.join("\n"))
 }
@@ -78,6 +141,11 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
         ),
         format!("- Root: {}", path_to_string(&report.root)),
         format!("- Report: {}", path_to_string(report_path)),
+    ];
+    if let Some(config_path) = &report.config_path {
+        lines.push(format!("- Config: {}", format_project_path(report, config_path)));
+    }
+    lines.extend([
         String::new(),
         "## Summary".to_string(),
         String::new(),
@@ -92,7 +160,7 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
             "- Deletion candidates: {}",
             report.summary.deletion_candidates
         ),
-    ];
+    ]);
     if report.summary.suppressed_findings > 0 {
         lines.push(format!(
             "- Suppressed findings: {}",
@@ -100,33 +168,64 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
         ));
     }
     lines.push(String::new());
+    lines.push("## Next Steps".to_string());
+    lines.push(String::new());
+    lines.push(format!(
+        "- `kratos report {} --format md`",
+        format_shell_argument(&path_to_string(report_path))
+    ));
+    lines.push(format!(
+        "- `kratos clean {}`",
+        format_shell_argument(&path_to_string(report_path))
+    ));
+    lines.push(String::new());
 
     push_markdown_section(
         &mut lines,
-        "Broken imports",
+        &format!("Broken imports ({})", report.findings.broken_imports.len()),
         &report.findings.broken_imports,
-        |item| format!("{} -> `{}`", path_to_string(&item.file), item.source),
+        |item| {
+            format!(
+                "{} -> `{}` ({})",
+                format_project_path(report, &item.file),
+                item.source,
+                import_kind_to_string(&item.kind)
+            )
+        },
     );
     push_markdown_section(
         &mut lines,
-        "Orphan files",
+        &format!("Orphan files ({})", report.findings.orphan_files.len()),
         &report.findings.orphan_files,
-        |item| format!("{} ({})", path_to_string(&item.file), item.reason),
+        |item| {
+            format!(
+                "{} ({}, confidence {:.2})",
+                format_project_path(report, &item.file),
+                item.reason,
+                item.confidence
+            )
+        },
     );
     push_markdown_section(
         &mut lines,
-        "Dead exports",
+        &format!("Dead exports ({})", report.findings.dead_exports.len()),
         &report.findings.dead_exports,
-        |item| format!("{} -> `{}`", path_to_string(&item.file), item.export_name),
+        |item| {
+            format!(
+                "{} -> `{}`",
+                format_project_path(report, &item.file),
+                item.export_name
+            )
+        },
     );
     push_markdown_section(
         &mut lines,
-        "Unused imports",
+        &format!("Unused imports ({})", report.findings.unused_imports.len()),
         &report.findings.unused_imports,
         |item| {
             format!(
                 "{} -> `{}` from `{}`",
-                path_to_string(&item.file),
+                format_project_path(report, &item.file),
                 item.local,
                 item.source
             )
@@ -134,26 +233,30 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
     );
     push_markdown_section(
         &mut lines,
-        "Route entrypoints",
+        &format!("Route entrypoints ({})", report.findings.route_entrypoints.len()),
         &report.findings.route_entrypoints,
         |item| {
             format!(
                 "{} ({})",
-                path_to_string(&item.file),
+                format_project_path(report, &item.file),
                 entrypoint_kind_to_string(&item.kind)
             )
         },
     );
     push_markdown_section(
         &mut lines,
-        "Deletion candidates",
+        &format!(
+            "Deletion candidates ({})",
+            report.findings.deletion_candidates.len()
+        ),
         &report.findings.deletion_candidates,
         |item| {
             format!(
-                "{} ({}, confidence {})",
-                path_to_string(&item.file),
+                "{} ({}, confidence {:.2}, safe {})",
+                format_project_path(report, &item.file),
                 item.reason,
-                item.confidence
+                item.confidence,
+                item.safe
             )
         },
     );
@@ -180,6 +283,21 @@ fn append_preview<T>(
 
     if items.len() > 5 {
         lines.push(format!("- ...and {} more", items.len() - 5));
+    }
+}
+
+fn format_project_path(report: &ReportV2, path: &Path) -> String {
+    path.strip_prefix(&report.root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn format_shell_argument(value: &str) -> String {
+    if value.is_empty() {
+        "''".to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
     }
 }
 
