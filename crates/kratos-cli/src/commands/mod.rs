@@ -241,8 +241,8 @@ pub fn canonicalize_report_args(raw_args: &[String]) -> Vec<String> {
     args
 }
 
-pub fn canonicalize_clean_args(raw_args: &[String]) -> Vec<String> {
-    let parsed = parse_cli_options(raw_args, &[], &["apply"]);
+pub fn canonicalize_clean_args(raw_args: &[String]) -> KratosResult<Vec<String>> {
+    let parsed = parse_cli_options(raw_args, &[], &["apply", "dry-run"]);
     let mut args = Vec::new();
 
     if let Some(input) = parsed.positionals.first() {
@@ -253,7 +253,11 @@ pub fn canonicalize_clean_args(raw_args: &[String]) -> Vec<String> {
         args.push("--apply".to_string());
     }
 
-    args
+    if is_enabled_boolean_flag(parsed.flags.get("dry-run")) {
+        args.push("--dry-run".to_string());
+    }
+
+    Ok(args)
 }
 
 pub fn resolve_report_input(input: Option<&str>, cwd: &Path) -> PathBuf {
