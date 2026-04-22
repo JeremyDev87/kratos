@@ -1,4 +1,5 @@
 pub mod clean;
+pub mod diff;
 pub mod report;
 pub mod scan;
 
@@ -15,13 +16,14 @@ pub struct CommandSpec {
     pub usage: &'static [&'static str],
 }
 
-pub const COMMANDS: &[CommandSpec] = &[scan::SPEC, report::SPEC, clean::SPEC];
+pub const COMMANDS: &[CommandSpec] = &[scan::SPEC, report::SPEC, diff::SPEC, clean::SPEC];
 pub const DEFAULT_REPORT_RELATIVE_PATH: &str = ".kratos/latest-report.json";
 
 pub fn dispatch(command: &str, args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     match command {
         scan::NAME => dispatch_command(scan::SPEC, scan::run, args, stdout),
         report::NAME => dispatch_command(report::SPEC, report::run, args, stdout),
+        diff::NAME => dispatch_command(diff::SPEC, diff::run, args, stdout),
         clean::NAME => dispatch_command(clean::SPEC, clean::run, args, stdout),
         _ => Err(KratosError::Config(format!("Unknown command: {command}"))),
     }
@@ -229,6 +231,28 @@ pub fn canonicalize_report_args(raw_args: &[String]) -> Vec<String> {
 
     if let Some(input) = parsed.positionals.first() {
         args.push(input.clone());
+    }
+
+    if let Some(value) = parsed.flags.get("format").and_then(flag_value_as_string) {
+        if !value.is_empty() {
+            args.push("--format".to_string());
+            args.push(value.to_string());
+        }
+    }
+
+    args
+}
+
+pub fn canonicalize_diff_args(raw_args: &[String]) -> Vec<String> {
+    let parsed = parse_cli_options(raw_args, &["format"], &[]);
+    let mut args = Vec::new();
+
+    if let Some(before) = parsed.positionals.first() {
+        args.push(before.clone());
+    }
+
+    if let Some(after) = parsed.positionals.get(1) {
+        args.push(after.clone());
     }
 
     if let Some(value) = parsed.flags.get("format").and_then(flag_value_as_string) {

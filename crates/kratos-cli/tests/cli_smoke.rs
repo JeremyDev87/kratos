@@ -10,7 +10,7 @@ fn root_help_matches_expected_shape() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  diff    Compare two saved reports.\n  clean   Show deletion candidates or delete them with --apply.\n"
     );
 }
 
@@ -21,7 +21,7 @@ fn unknown_command_returns_help_and_exit_code_one() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  diff    Compare two saved reports.\n  clean   Show deletion candidates or delete them with --apply.\n"
     );
 }
 
