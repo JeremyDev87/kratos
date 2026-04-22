@@ -709,7 +709,7 @@ pub(crate) fn entrypoint_kind_to_string(kind: &EntrypointKind) -> &'static str {
     }
 }
 
-fn import_kind_to_string(kind: &ImportKind) -> &'static str {
+pub(crate) fn import_kind_to_string(kind: &ImportKind) -> &'static str {
     match kind {
         ImportKind::Static => "static",
         ImportKind::SideEffect => "side-effect",
