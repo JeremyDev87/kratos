@@ -10,7 +10,7 @@ fn root_help_matches_expected_shape() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--dry-run|--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json] [--fail-on kinds]\n  kratos report [report-path-or-root] [--format summary|json|md] [--fail-on kinds]\n  kratos clean [report-path-or-root] [--dry-run|--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
     );
 }
 
@@ -21,7 +21,7 @@ fn unknown_command_returns_help_and_exit_code_one() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--dry-run|--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json] [--fail-on kinds]\n  kratos report [report-path-or-root] [--format summary|json|md] [--fail-on kinds]\n  kratos clean [report-path-or-root] [--dry-run|--apply]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  clean   Show deletion candidates or delete them with --apply.\n"
     );
 }
 
@@ -391,6 +391,40 @@ fn scan_output_empty_string_defaults_and_missing_value_errors() {
         !project_root.join("--json").exists(),
         "missing output value should not create a stray report file"
     );
+}
+
+#[test]
+fn scan_and_report_support_fail_on_ci_gate() {
+    let project_root = copy_demo_app("cli-fail-on");
+    let report_path = project_root.join(".kratos/latest-report.json");
+
+    let scan = run_cli_in_dir(
+        &project_root,
+        &["scan", "--fail-on", "broken-imports,deletion-candidates"],
+    );
+    assert_eq!(scan.status.code(), Some(2));
+    let scan_stdout = String::from_utf8_lossy(&scan.stdout);
+    assert!(scan_stdout.contains("Kratos scan complete."));
+    assert!(scan_stdout.contains("Gate status: failed"));
+    assert!(scan_stdout.contains("broken imports: 1"));
+    assert!(scan_stdout.contains("deletion candidates: 2"));
+    assert!(report_path.exists());
+
+    let report = run_cli_in_dir(
+        &project_root,
+        &[
+            "report",
+            report_path.to_str().expect("path should be utf8"),
+            "--format",
+            "md",
+            "--fail-on",
+            "any",
+        ],
+    );
+    assert_eq!(report.status.code(), Some(2));
+    let report_stdout = String::from_utf8_lossy(&report.stdout);
+    assert!(report_stdout.contains("## Gate Status"));
+    assert!(report_stdout.contains("- Result: failed"));
 }
 
 #[test]
