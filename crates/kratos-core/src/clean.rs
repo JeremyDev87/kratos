@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::error::{KratosError, KratosResult};
-use crate::model::{ReportV2, REPORT_V2};
+use crate::model::{DeletionCandidateFinding, ReportV2, REPORT_V2};
 use crate::report::parse_report_json;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -13,12 +13,26 @@ pub struct CleanOutcome {
     pub skipped_files: usize,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CleanThresholdPlan {
+    pub deletion_targets: Vec<DeletionCandidateFinding>,
+    pub threshold_skipped_targets: Vec<DeletionCandidateFinding>,
+}
+
 pub fn clean_from_report_path(
     report_path: impl AsRef<Path>,
     apply: bool,
 ) -> KratosResult<CleanOutcome> {
     let report = load_clean_report(report_path)?;
     clean_from_report(&report, apply)
+}
+
+pub fn clean_from_report_path_with_min_confidence(
+    report_path: impl AsRef<Path>,
+    min_confidence: f32,
+) -> KratosResult<CleanOutcome> {
+    let report = load_clean_report(report_path)?;
+    clean_from_report_with_min_confidence(&report, min_confidence)
 }
 
 pub fn load_clean_report(report_path: impl AsRef<Path>) -> KratosResult<ReportV2> {
@@ -42,6 +56,33 @@ pub fn load_clean_report(report_path: impl AsRef<Path>) -> KratosResult<ReportV2
     parse_report_json(&raw)
 }
 
+pub fn plan_clean_candidates(
+    report: &ReportV2,
+    min_confidence: f32,
+) -> KratosResult<CleanThresholdPlan> {
+    validate_clean_threshold_inputs(report, min_confidence)?;
+
+    let mut plan = CleanThresholdPlan::default();
+
+    for candidate in &report.findings.deletion_candidates {
+        if candidate.confidence >= min_confidence {
+            plan.deletion_targets.push(candidate.clone());
+        } else {
+            plan.threshold_skipped_targets.push(candidate.clone());
+        }
+    }
+
+    Ok(plan)
+}
+
+pub fn clean_from_report_with_min_confidence(
+    report: &ReportV2,
+    min_confidence: f32,
+) -> KratosResult<CleanOutcome> {
+    let plan = plan_clean_candidates(report, min_confidence)?;
+    apply_clean_plan(report, &plan)
+}
+
 pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOutcome> {
     if report.version < REPORT_V2 {
         return Err(KratosError::InvalidReportVersion {
@@ -57,11 +98,35 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
         });
     }
 
+    clean_from_report_with_min_confidence(report, 0.0)
+}
+
+fn validate_clean_threshold_inputs(report: &ReportV2, min_confidence: f32) -> KratosResult<()> {
+    if report.version < REPORT_V2 {
+        return Err(KratosError::InvalidReportVersion {
+            expected: REPORT_V2,
+            found: report.version,
+        });
+    }
+
+    if !min_confidence.is_finite() || !(0.0..=1.0).contains(&min_confidence) {
+        return Err(KratosError::Config(
+            "--min-confidence must be between 0.0 and 1.0".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn apply_clean_plan(report: &ReportV2, plan: &CleanThresholdPlan) -> KratosResult<CleanOutcome> {
     let report_root_path = resolve_path(&report.root);
     let deletion_root = realpath_or_fallback(&report.root);
-    let mut outcome = CleanOutcome::default();
+    let mut outcome = CleanOutcome {
+        deleted_files: 0,
+        skipped_files: plan.threshold_skipped_targets.len(),
+    };
 
-    for candidate in &report.findings.deletion_candidates {
+    for candidate in &plan.deletion_targets {
         let candidate_path = resolve_path(&candidate.file);
 
         if !is_within_directory(&report_root_path, &candidate_path) {

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use kratos_core::config::load_clean_min_confidence;
 use kratos_core::config::load_project_config;
 use kratos_core::discover::collect_source_files;
 use kratos_core::jsonc::parse_loose_json;
@@ -96,6 +97,93 @@ fn load_project_config_parses_comments_and_collects_entries() {
             .package_entries
             .contains(&project.root().to_path_buf()),
         "empty export targets should be ignored"
+    );
+}
+
+#[test]
+fn load_clean_min_confidence_defaults_to_zero_and_reads_thresholds() {
+    let project = TestProject::new("clean-confidence-defaults");
+
+    assert_eq!(
+        load_clean_min_confidence(project.root()).expect("default threshold should load"),
+        0.0
+    );
+
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "thresholds": {
+    "cleanMinConfidence": 0.85
+  }
+}
+"#,
+    );
+
+    assert_eq!(
+        load_clean_min_confidence(project.root()).expect("threshold should load"),
+        0.85
+    );
+}
+
+#[test]
+fn load_clean_min_confidence_rejects_out_of_range_values() {
+    let project = TestProject::new("clean-confidence-invalid");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "thresholds": {
+    "cleanMinConfidence": 1.2
+  }
+}
+"#,
+    );
+
+    let error = load_clean_min_confidence(project.root()).expect_err("threshold should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("thresholds.cleanMinConfidence must be between 0.0 and 1.0"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn load_clean_min_confidence_rejects_non_object_thresholds() {
+    let project = TestProject::new("clean-confidence-invalid-thresholds-shape");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "thresholds": []
+}
+"#,
+    );
+
+    let error = load_clean_min_confidence(project.root()).expect_err("thresholds shape should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("thresholds must be an object when specifying thresholds.cleanMinConfidence"),
+        "unexpected error: {error}"
+    );
+}
+
+#[test]
+fn load_clean_min_confidence_rejects_missing_key_when_thresholds_is_present() {
+    let project = TestProject::new("clean-confidence-missing-threshold-key");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "thresholds": {}
+}
+"#,
+    );
+
+    let error = load_clean_min_confidence(project.root()).expect_err("missing threshold key should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("thresholds.cleanMinConfidence is required when thresholds is present"),
+        "unexpected error: {error}"
     );
 }
 

@@ -85,6 +85,14 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
     })
 }
 
+pub fn load_clean_min_confidence(root: impl Into<PathBuf>) -> KratosResult<f32> {
+    let root = normalize_project_root(root.into());
+    let user_config = read_loose_json_file(&resolve_config_path(&root, DEFAULT_CONFIG_FILENAME))?
+        .unwrap_or_else(empty_object);
+
+    read_clean_min_confidence(&user_config)
+}
+
 pub fn resolve_config_path(root: &Path, file_name: &str) -> PathBuf {
     root.join(file_name)
 }
@@ -106,6 +114,34 @@ fn read_loose_json_file(file_path: &Path) -> KratosResult<Option<JsonValue>> {
 
     let content = std::fs::read_to_string(file_path)?;
     Ok(Some(parse_loose_json(&content)?))
+}
+
+fn read_clean_min_confidence(user_config: &JsonValue) -> KratosResult<f32> {
+    let Some(thresholds) = user_config.get("thresholds") else {
+        return Ok(0.0);
+    };
+    let Some(thresholds) = thresholds.as_object() else {
+        return Err(config_error(
+            "thresholds must be an object when specifying thresholds.cleanMinConfidence",
+        ));
+    };
+
+    let Some(value) = thresholds.get("cleanMinConfidence") else {
+        return Err(config_error(
+            "thresholds.cleanMinConfidence is required when thresholds is present",
+        ));
+    };
+
+    let Some(value) = (match value {
+        JsonValue::Number(raw) => raw.parse::<f64>().ok(),
+        _ => None,
+    }) else {
+        return Err(config_error(
+            "thresholds.cleanMinConfidence must be a number between 0.0 and 1.0",
+        ));
+    };
+
+    validate_clean_min_confidence(value, "thresholds.cleanMinConfidence")
 }
 
 fn normalize_roots(root: &Path, roots: Option<&JsonValue>) -> KratosResult<Vec<PathBuf>> {
@@ -412,6 +448,16 @@ fn resolve_alias_target_pattern(root: &Path, value: &str) -> String {
 
 fn config_error(message: &str) -> crate::error::KratosError {
     crate::error::KratosError::Config(message.to_string())
+}
+
+fn validate_clean_min_confidence(value: f64, field_name: &str) -> KratosResult<f32> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(config_error(&format!(
+            "{field_name} must be between 0.0 and 1.0"
+        )));
+    }
+
+    Ok(value as f32)
 }
 
 fn normalize_path(path: PathBuf) -> PathBuf {
