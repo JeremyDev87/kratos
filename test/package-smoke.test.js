@@ -126,6 +126,37 @@ test("packed root package boots the actual native addon for the current platform
   assert.equal(path.resolve(report.project.root), demoAppPath);
 });
 
+test("packed root package can fail CI gates on findings", async (t) => {
+  const nativeLibraryPath = process.env.KRATOS_PACKAGE_SMOKE_NATIVE_LIB;
+
+  if (!nativeLibraryPath) {
+    t.skip("KRATOS_PACKAGE_SMOKE_NATIVE_LIB is not set");
+    return;
+  }
+
+  const resolvedNativeLibraryPath = path.resolve(repoRoot, nativeLibraryPath);
+  const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "kratos-package-gate-smoke-"));
+  const rootPackage = await packRootTarball(tempRoot);
+  const addonTarballs = await packAddonTarballs(tempRoot, {
+    nativeLibraryPath: resolvedNativeLibraryPath,
+  });
+  const installRoot = await installPackedRootPackage(tempRoot, rootPackage, addonTarballs);
+  const demoAppPath = path.join(repoRoot, "fixtures", "demo-app");
+
+  const runResult = runInstalledKratos(
+    installRoot,
+    ["scan", demoAppPath, "--fail-on", "broken-imports,deletion-candidates"],
+    {
+      cwd: installRoot,
+    },
+  );
+
+  assert.equal(runResult.status, 2, runResult.stderr || runResult.stdout);
+  assert.match(runResult.stdout, /Kratos scan complete\./);
+  assert.match(runResult.stdout, /Gate status: failed/);
+  assert.match(runResult.stdout, /broken imports: 1/);
+});
+
 async function assertWindowsCmdShimTargetsInstalledLauncher(installRoot) {
   const launcherPath = path.join(
     installRoot,

@@ -9,7 +9,8 @@ use kratos_core::report_format::format_summary_report;
 use kratos_core::{KratosError, KratosResult};
 
 use super::{
-    canonicalize_scan_args, resolve_input_path, write_output, CommandSpec,
+    canonicalize_scan_args, fail_on_exit_code, parse_fail_on, render_fail_on_message,
+    resolve_input_path, write_output, CommandSpec,
     DEFAULT_REPORT_RELATIVE_PATH,
 };
 
@@ -17,7 +18,7 @@ pub const NAME: &str = "scan";
 pub const SPEC: CommandSpec = CommandSpec {
     name: NAME,
     summary: "Analyze a codebase and save the latest report.",
-    usage: &["kratos scan [root] [--output path] [--json]"],
+    usage: &["kratos scan [root] [--output path] [--json] [--fail-on kinds]"],
 };
 
 #[derive(Debug, Parser)]
@@ -29,6 +30,8 @@ struct ScanArgs {
     output: Option<String>,
     #[arg(long)]
     json: bool,
+    #[arg(long = "fail-on", allow_hyphen_values = true)]
+    fail_on: Option<String>,
 }
 
 pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
@@ -41,6 +44,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     let output_path = resolve_output_path(&root, args.output.as_deref());
     let report = analyze_project(&root)?;
     let serialized = serialize_report_pretty(&report)?;
+    let fail_on = parse_fail_on(args.fail_on.as_deref())?;
 
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)?;
@@ -49,14 +53,19 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
 
     if args.json {
         write_output(stdout, &serialized)?;
-        return Ok(0);
+        return Ok(fail_on_exit_code(&report, &fail_on));
     }
 
     write_output(
         stdout,
         &format_summary_report(&report, &output_path, "Kratos scan complete.")?,
     )?;
-    Ok(0)
+
+    if let Some(message) = render_fail_on_message(&report, &fail_on, false) {
+        write_output(stdout, &message)?;
+    }
+
+    Ok(fail_on_exit_code(&report, &fail_on))
 }
 
 fn parse_args(args: &[String]) -> KratosResult<ScanArgs> {
