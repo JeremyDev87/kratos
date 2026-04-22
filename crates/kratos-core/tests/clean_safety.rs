@@ -47,7 +47,7 @@ fn clean_rejects_symlink_escape_candidates() {
 }
 
 #[test]
-fn clean_skips_dangling_symlink_candidates() {
+fn clean_deletes_dangling_symlink_candidates() {
     let temp_root = temp_dir("clean-dangling-symlink");
     let report_root = temp_root.join("app");
     let dangling_link = report_root.join("dangling.ts");
@@ -56,14 +56,39 @@ fn clean_skips_dangling_symlink_candidates() {
     symlink_file(Path::new("missing-target.ts"), &dangling_link);
 
     let report = report_with_candidate(&report_root, &dangling_link);
-    let outcome = clean_from_report(&report, true).expect("clean should skip dangling symlinks");
+    let outcome = clean_from_report(&report, true).expect("clean should delete dangling symlinks");
 
     assert!(
-        std::fs::symlink_metadata(&dangling_link).is_ok(),
-        "dangling symlink should remain untouched"
+        std::fs::symlink_metadata(&dangling_link).is_err(),
+        "dangling symlink should be deleted"
     );
-    assert_eq!(outcome.deleted_files, 0);
-    assert_eq!(outcome.skipped_files, 1);
+    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.skipped_files, 0);
+}
+
+#[test]
+fn clean_deletes_live_symlink_candidates_without_touching_targets() {
+    let temp_root = temp_dir("clean-live-symlink");
+    let report_root = temp_root.join("app");
+    let outside_root = temp_root.join("outside");
+    let outside_file = outside_root.join("target.ts");
+    let symlink_path = report_root.join("linked.ts");
+
+    std::fs::create_dir_all(&report_root).expect("report root should exist");
+    std::fs::create_dir_all(&outside_root).expect("outside root should exist");
+    std::fs::write(&outside_file, "export const keep = true;\n").expect("outside file writes");
+    symlink_file(&outside_file, &symlink_path);
+
+    let report = report_with_candidate(&report_root, &symlink_path);
+    let outcome = clean_from_report(&report, true).expect("clean should delete symlink entries");
+
+    assert!(
+        std::fs::symlink_metadata(&symlink_path).is_err(),
+        "symlink entry should be deleted"
+    );
+    assert!(outside_file.exists(), "target file should remain untouched");
+    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.skipped_files, 0);
 }
 
 #[test]

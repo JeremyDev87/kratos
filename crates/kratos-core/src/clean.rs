@@ -101,6 +101,21 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
     clean_from_report_with_min_confidence(report, 0.0)
 }
 
+pub(crate) fn is_safe_clean_candidate(report_root: &Path, candidate_path: &Path) -> bool {
+    let report_root_path = resolve_path(report_root);
+    let candidate_path = resolve_path(candidate_path);
+
+    if !is_within_directory(&report_root_path, &candidate_path) {
+        return false;
+    }
+
+    let deletion_root = realpath_or_fallback(report_root);
+    let candidate_parent_path = candidate_path.parent().unwrap_or(report_root_path.as_path());
+    let candidate_parent = realpath_or_fallback(candidate_parent_path);
+
+    is_within_directory(&deletion_root, &candidate_parent)
+}
+
 fn validate_clean_threshold_inputs(report: &ReportV2, min_confidence: f32) -> KratosResult<()> {
     if report.version < REPORT_V2 {
         return Err(KratosError::InvalidReportVersion {
@@ -120,7 +135,6 @@ fn validate_clean_threshold_inputs(report: &ReportV2, min_confidence: f32) -> Kr
 
 fn apply_clean_plan(report: &ReportV2, plan: &CleanThresholdPlan) -> KratosResult<CleanOutcome> {
     let report_root_path = resolve_path(&report.root);
-    let deletion_root = realpath_or_fallback(&report.root);
     let mut outcome = CleanOutcome {
         deleted_files: 0,
         skipped_files: plan.threshold_skipped_targets.len(),
@@ -129,25 +143,12 @@ fn apply_clean_plan(report: &ReportV2, plan: &CleanThresholdPlan) -> KratosResul
     for candidate in &plan.deletion_targets {
         let candidate_path = resolve_path(&candidate.file);
 
-        if !is_within_directory(&report_root_path, &candidate_path) {
+        if !is_safe_clean_candidate(&report.root, &candidate_path) || !file_exists(&candidate_path) {
             outcome.skipped_files += 1;
             continue;
         }
 
-        if !file_exists(&candidate_path) {
-            outcome.skipped_files += 1;
-            continue;
-        }
-
-        let candidate_parent_path = candidate_path
-            .parent()
-            .unwrap_or(report_root_path.as_path());
-        let candidate_parent = realpath_or_fallback(candidate_parent_path);
-
-        if !is_within_directory(&deletion_root, &candidate_parent) {
-            outcome.skipped_files += 1;
-            continue;
-        }
+        let candidate_parent_path = candidate_path.parent().unwrap_or(report_root_path.as_path());
 
         match std::fs::remove_file(&candidate_path) {
             Ok(()) => {
@@ -165,7 +166,11 @@ fn apply_clean_plan(report: &ReportV2, plan: &CleanThresholdPlan) -> KratosResul
 }
 
 fn file_exists(path: &Path) -> bool {
-    std::fs::metadata(path).is_ok()
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => true,
+        Ok(_) => std::fs::metadata(path).is_ok(),
+        Err(_) => false,
+    }
 }
 
 fn realpath_or_fallback(path: &Path) -> PathBuf {
