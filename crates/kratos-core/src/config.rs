@@ -62,13 +62,18 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
         .and_then(|value| value.get("baseUrl"))
         .and_then(JsonValue::as_str)
         .map(|value| resolve_path(&root, value));
+    let config_path = resolve_config_path(&root, DEFAULT_CONFIG_FILENAME);
 
     Ok(ProjectConfig {
         root: root.clone(),
-        config_path: None,
+        config_path: config_path.exists().then_some(config_path),
         base_url: base_url.clone(),
         roots: normalize_roots(&root, user_config.get("roots"))?,
         ignored_directories: normalize_ignored_directories(user_config.get("ignore")),
+        ignore_patterns: extract_required_string_array(
+            user_config.get("ignorePatterns"),
+            "ignorePatterns",
+        )?,
         explicit_entries: normalize_entry_paths(&root, user_config.get("entry"))?,
         package_entries: collect_package_entry_files(&root, &package_json),
         path_aliases: normalize_path_aliases(
