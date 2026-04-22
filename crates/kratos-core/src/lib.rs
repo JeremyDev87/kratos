@@ -1,5 +1,6 @@
 pub mod analyze;
 pub mod clean;
+pub mod clean_preview;
 pub mod config;
 pub mod discover;
 pub mod entrypoints;
