@@ -138,7 +138,12 @@ jobs:
 
       - name: Dispatch CI for bump branch
         if: ${{ !inputs.dry_run }}
-        run: gh workflow run ci.yml --ref "${{ steps.meta.outputs.branch }}"
+        shell: bash
+        run: |
+          bump_sha=$(git rev-parse HEAD)
+          gh workflow run ci.yml \
+            --ref "${{ steps.meta.outputs.branch }}" \
+            -f target_sha="$bump_sha"
 
       - name: Ensure skip-changelog label exists
         if: ${{ !inputs.dry_run }}
