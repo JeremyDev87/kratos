@@ -62,10 +62,20 @@ jobs:
 
           branch=$(node --input-type=module -e "import { createManualBumpBranchName } from './scripts/bump-release-version.mjs'; console.log(createManualBumpBranchName(process.argv[1], process.argv[2]));" "$tag" "${{ inputs.base_ref }}")
 
+          if [ "${{ inputs.base_ref }}" = "master" ]; then
+            candidate_verification_line="merge 후 \`Release Candidate Core Verification\` workflow가 \`master\`에서 자동 실행되어 tag 전 후보 commit을 검증합니다."
+            candidate_follow_up_line="실제 tag 전에는 검증된 same-commit의 \`CI\` workflow native packaging 결과도 green인지 확인해야 합니다."
+          else
+            candidate_verification_line="\`${{ inputs.base_ref }}\`는 자동 대상이 아니므로 merge 후 해당 merge commit SHA를 \`target_sha\`로 넣어 \`Release Candidate Core Verification\` workflow를 수동 실행해 후보 commit을 검증해야 합니다."
+            candidate_follow_up_line="실제 tag 전에는 같은 merge commit SHA를 \`target_sha\`로 넣어 \`CI\` workflow도 수동 실행하고, native packaging jobs까지 green인지 확인해야 합니다."
+          fi
+
           {
             echo "currentVersion=$current_version"
             echo "branch=$branch"
             echo "title=chore: ${tag#v} 수동 bump"
+            printf 'candidateVerificationLine=%s\n' "$candidate_verification_line"
+            printf 'candidateFollowupLine=%s\n' "$candidate_follow_up_line"
           } >> "$GITHUB_OUTPUT"
 
       - name: Apply version bump
@@ -165,6 +175,7 @@ jobs:
           - \`node ./scripts/release-plan.mjs ${{ steps.meta.outputs.tag }}\`
           - \`node ./scripts/bump-release-version.mjs ${{ steps.meta.outputs.tag }}\`
           - \`npm run verify\`
+          - ${{ steps.meta.outputs.candidateVerificationLine }}
 
           ## 브랜치 / 워크트리 / Branches and worktrees
 
@@ -174,6 +185,7 @@ jobs:
           ## 리스크 또는 확인 포인트 / Risks or follow-ups
 
           - stable tag / publish는 아직 실행하지 않았습니다.
+          - ${{ steps.meta.outputs.candidateFollowupLine }}
           - release 실행 전 최종 확인이 필요합니다.
           EOF
 
