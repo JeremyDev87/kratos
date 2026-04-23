@@ -1,0 +1,174 @@
+name: Release Candidate Core Verification
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - package.json
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Merge commit SHA to verify as a release candidate
+        required: true
+        type: string
+
+concurrency:
+  group: release-candidate-${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify_release_candidate:
+    name: Verify Release Candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NPM_CONFIG_CACHE: .npm-cache
+
+    steps:
+      - name: Validate manual target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          if ! [[ "${{ inputs.target_sha }}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "target_sha must be a full 40-character commit SHA."
+            exit 1
+          fi
+
+      - name: Checkout pinned release candidate commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Confirm checked out commit matches target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          checked_out_sha=$(git rev-parse HEAD)
+          if [ "$checked_out_sha" != "${{ inputs.target_sha }}" ]; then
+            echo "Expected checkout to resolve to ${{ inputs.target_sha }}, got $checked_out_sha"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Resolve release candidate metadata
+        id: meta
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          previous_version=""
+          should_verify=true
+          verified_sha=$(git rev-parse HEAD)
+
+          node ./scripts/release-plan.mjs "$tag" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$BEFORE_SHA" ] && git cat-file -e "$BEFORE_SHA:package.json" 2>/dev/null; then
+            previous_version=$(git show "$BEFORE_SHA:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          fi
+
+          if [ "${{ github.event_name }}" = "push" ] && [ -n "$previous_version" ] && [ "$previous_version" = "$version" ]; then
+            should_verify=false
+          fi
+
+          {
+            echo "previousVersion=$previous_version"
+            echo "shouldVerify=$should_verify"
+            echo "verifiedSha=$verified_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip when package version is unchanged
+        if: ${{ steps.meta.outputs.shouldVerify != 'true' }}
+        run: |
+          {
+            echo "### Release candidate core verification skipped"
+            echo
+            echo "- ref: \`${GITHUB_REF_NAME}\`"
+            echo "- reason: \`package.json\` changed, but version stayed at \`${{ steps.meta.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ensure release tag does not already exist
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        shell: bash
+        run: |
+          if git rev-parse -q --verify "refs/tags/${{ steps.meta.outputs.tag }}" >/dev/null; then
+            echo "Release tag ${{ steps.meta.outputs.tag }} already exists. Create or update tags only after reviewing the current candidate commit."
+            exit 1
+          fi
+
+      - name: Verify package manifest alignment
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const mismatches = Object.entries(pkg.optionalDependencies ?? {}).filter(
+            ([, version]) => version !== pkg.version,
+          );
+
+          if (mismatches.length > 0) {
+            const details = mismatches
+              .map(([name, version]) => `${name}@${version}`)
+              .join(", ");
+            throw new Error(`optionalDependencies must match package.json version ${pkg.version}: ${details}`);
+          }
+          NODE
+
+      - name: Install dependencies when needed
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-package-lock
+          fi
+
+      - name: Run npm verification
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        run: npm run verify
+
+      - name: Run package smoke test
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        run: npm run smoke
+
+      - name: Setup Rust toolchain
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Rust workspace tests
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        run: cargo test --workspace
+
+      - name: Publish release candidate summary
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        shell: bash
+        run: |
+          {
+            echo "### Release candidate core checks passed"
+            echo
+            echo "- ref: \`${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.ref_name }}\`"
+            echo "- verified commit: \`${{ steps.meta.outputs.verifiedSha }}\`"
+            echo "- version: \`${{ steps.meta.outputs.version }}\`"
+            echo "- next tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo
+            echo "This workflow verifies version/tag alignment and core release checks on the pinned candidate commit."
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Before creating the real tag, manually run the \`CI\` workflow for the same commit SHA and wait for native packaging jobs to pass."
+            else
+              echo "Before creating the real tag, also confirm the same commit is green in the \`CI\` workflow, including native packaging jobs."
+            fi
+            echo "Create the release tag only after maintainer confirmation and only from \`${{ steps.meta.outputs.verifiedSha }}\`."
+          } >> "$GITHUB_STEP_SUMMARY"

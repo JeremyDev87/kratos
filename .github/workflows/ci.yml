@@ -7,9 +7,14 @@ on:
       - master
   pull_request:
   workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Commit SHA to verify when dispatching CI manually
+        required: true
+        type: string
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -33,8 +38,29 @@ jobs:
       contents: read
 
     steps:
+      - name: Validate manual target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          if ! [[ "${{ inputs.target_sha }}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "target_sha must be a full 40-character commit SHA."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.ref }}
+
+      - name: Confirm checked out commit matches target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          checked_out_sha=$(git rev-parse HEAD)
+          if [ "$checked_out_sha" != "${{ inputs.target_sha }}" ]; then
+            echo "Expected checkout to resolve to ${{ inputs.target_sha }}, got $checked_out_sha"
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -61,8 +87,29 @@ jobs:
       contents: read
 
     steps:
+      - name: Validate manual target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          if ! [[ "${{ inputs.target_sha }}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "target_sha must be a full 40-character commit SHA."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.ref }}
+
+      - name: Confirm checked out commit matches target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          checked_out_sha=$(git rev-parse HEAD)
+          if [ "$checked_out_sha" != "${{ inputs.target_sha }}" ]; then
+            echo "Expected checkout to resolve to ${{ inputs.target_sha }}, got $checked_out_sha"
+            exit 1
+          fi
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -125,8 +172,29 @@ jobs:
             built_library: target/x86_64-pc-windows-msvc/release/kratos_node.dll
 
     steps:
+      - name: Validate manual target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          if ! [[ "${{ inputs.target_sha }}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo "target_sha must be a full 40-character commit SHA."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.target_sha || github.ref }}
+
+      - name: Confirm checked out commit matches target SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          checked_out_sha=$(git rev-parse HEAD)
+          if [ "$checked_out_sha" != "${{ inputs.target_sha }}" ]; then
+            echo "Expected checkout to resolve to ${{ inputs.target_sha }}, got $checked_out_sha"
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
