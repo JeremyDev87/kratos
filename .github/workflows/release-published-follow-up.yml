@@ -1,0 +1,225 @@
+name: Release Published Follow-up
+run-name: Release Published Follow-up ${{ github.event_name == 'workflow_dispatch' && (startsWith(inputs.tag, 'v') && inputs.tag || format('v{0}', inputs.tag)) || github.event.release.tag_name }}
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published git tag or version to audit, for example v0.1.0
+        required: true
+        type: string
+
+concurrency:
+  group: release-published-${{ github.event_name == 'workflow_dispatch' && (startsWith(inputs.tag, 'v') && inputs.tag || format('v{0}', inputs.tag)) || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  audit:
+    name: Audit Published Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - name: Resolve target release
+        id: meta
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            release_url="${{ github.event.release.html_url }}"
+            published_at="${{ github.event.release.published_at }}"
+          else
+            tag="${{ inputs.tag }}"
+            if [[ "$tag" != v* ]]; then
+              tag="v$tag"
+            fi
+
+            release_json=$(gh release view "$tag" --json url,publishedAt)
+            release_url=$(printf '%s' "$release_json" | jq -r '.url')
+            published_at=$(printf '%s' "$release_json" | jq -r '.publishedAt // ""')
+          fi
+
+          if [[ "$tag" != v* ]]; then
+            tag="v$tag"
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "releaseUrl=$release_url"
+            echo "publishedAt=$published_at"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Locate matching release publish run
+        id: publish_run
+        shell: bash
+        env:
+          TARGET_TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          expected_title="Release Publish ${TARGET_TAG}"
+          page=1
+          matched_run=""
+
+          while :; do
+            runs_json=$(gh api "/repos/${GH_REPO}/actions/workflows/release.yml/runs?per_page=100&page=${page}")
+            run_count=$(printf '%s' "$runs_json" | jq '.workflow_runs | length')
+
+            if [ "$run_count" -eq 0 ]; then
+              break
+            fi
+
+            matched_run=$(printf '%s' "$runs_json" | jq -c --arg title "$expected_title" --arg tag "$TARGET_TAG" '
+              .workflow_runs
+              | map({
+                  databaseId: .id,
+                  displayTitle: .display_title,
+                  event: .event,
+                  headBranch: (.head_branch // ""),
+                  status: .status,
+                  conclusion: (.conclusion // ""),
+                  url: .html_url,
+                  createdAt: .created_at
+                })
+              | (map(select(.displayTitle == $title)) | sort_by(.createdAt) | reverse | .[0]) //
+                (map(select(.headBranch == $tag)) | sort_by(.createdAt) | reverse | .[0]) //
+                empty
+            ')
+
+            if [ -n "$matched_run" ]; then
+              break
+            fi
+
+            if [ "$run_count" -lt 100 ]; then
+              break
+            fi
+
+            page=$((page + 1))
+          done
+
+          if [ -z "$matched_run" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo "found=true"
+            echo "databaseId=$(printf '%s' "$matched_run" | jq -r '.databaseId')"
+            echo "displayTitle=$(printf '%s' "$matched_run" | jq -r '.displayTitle')"
+            echo "event=$(printf '%s' "$matched_run" | jq -r '.event')"
+            echo "headBranch=$(printf '%s' "$matched_run" | jq -r '.headBranch // \"\"')"
+            echo "status=$(printf '%s' "$matched_run" | jq -r '.status')"
+            echo "conclusion=$(printf '%s' "$matched_run" | jq -r '.conclusion // \"\"')"
+            echo "url=$(printf '%s' "$matched_run" | jq -r '.url')"
+            echo "createdAt=$(printf '%s' "$matched_run" | jq -r '.createdAt')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Wait for matching release publish run
+        if: ${{ steps.publish_run.outputs.found == 'true' && steps.publish_run.outputs.status != 'completed' }}
+        continue-on-error: true
+        shell: bash
+        run: gh run watch "${{ steps.publish_run.outputs.databaseId }}" --interval 10 --exit-status
+
+      - name: Refresh matching release publish run state
+        if: ${{ steps.publish_run.outputs.found == 'true' }}
+        id: publish_run_final
+        shell: bash
+        run: |
+          run_json=$(gh run view "${{ steps.publish_run.outputs.databaseId }}" --json databaseId,displayTitle,event,headBranch,status,conclusion,url,createdAt)
+
+          {
+            echo "databaseId=$(printf '%s' "$run_json" | jq -r '.databaseId')"
+            echo "displayTitle=$(printf '%s' "$run_json" | jq -r '.displayTitle')"
+            echo "event=$(printf '%s' "$run_json" | jq -r '.event')"
+            echo "headBranch=$(printf '%s' "$run_json" | jq -r '.headBranch // \"\"')"
+            echo "status=$(printf '%s' "$run_json" | jq -r '.status')"
+            echo "conclusion=$(printf '%s' "$run_json" | jq -r '.conclusion // \"\"')"
+            echo "url=$(printf '%s' "$run_json" | jq -r '.url')"
+            echo "createdAt=$(printf '%s' "$run_json" | jq -r '.createdAt')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Refresh published release metadata after publish run settles
+        id: release_final
+        shell: bash
+        run: |
+          release_json=$(gh release view "${{ steps.meta.outputs.tag }}" --json assets,targetCommitish)
+          asset_count=$(printf '%s' "$release_json" | jq '.assets | length')
+          target_commitish=$(printf '%s' "$release_json" | jq -r '.targetCommitish // ""')
+
+          {
+            echo "assetCount=$asset_count"
+            echo "targetCommitish=$target_commitish"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fail when no matching release publish run exists
+        if: ${{ steps.publish_run.outputs.found != 'true' }}
+        shell: bash
+        run: |
+          {
+            echo "### Published release follow-up failed"
+            echo
+            echo "- release: ${{ steps.meta.outputs.releaseUrl }}"
+            echo "- tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo "- reason: no matching \`release.yml\` publish run was found for this tag"
+            echo
+            echo "This workflow does not publish packages or create release assets."
+            echo "Run \`Release Publish\` manually with tag \`${{ steps.meta.outputs.tag }}\` if the tag was created or the release was published outside the normal publish lane."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Fail when the latest release publish run did not succeed
+        if: ${{ steps.publish_run_final.outputs.conclusion != 'success' }}
+        shell: bash
+        run: |
+          {
+            echo "### Published release follow-up failed"
+            echo
+            echo "- release: ${{ steps.meta.outputs.releaseUrl }}"
+            echo "- tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo "- publish run: ${{ steps.publish_run_final.outputs.url }}"
+            echo "- status: \`${{ steps.publish_run_final.outputs.status }}\`"
+            echo "- conclusion: \`${{ steps.publish_run_final.outputs.conclusion }}\`"
+            echo
+            echo "This workflow does not retry publish work. Fix the failed publish lane first, then rerun \`Release Publish\` manually for \`${{ steps.meta.outputs.tag }}\` if needed."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Fail when the published release has no assets
+        if: ${{ steps.release_final.outputs.assetCount == '0' }}
+        shell: bash
+        run: |
+          {
+            echo "### Published release follow-up failed"
+            echo
+            echo "- release: ${{ steps.meta.outputs.releaseUrl }}"
+            echo "- tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo "- publish run: ${{ steps.publish_run_final.outputs.url }}"
+            echo "- reason: published GitHub Release has zero assets"
+            echo
+            echo "This usually means the release was created outside the normal publish lane or asset upload was skipped."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Summarize published release audit
+        shell: bash
+        run: |
+          {
+            echo "### Published release follow-up passed"
+            echo
+            echo "- release: ${{ steps.meta.outputs.releaseUrl }}"
+            echo "- tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo "- published at: \`${{ steps.meta.outputs.publishedAt }}\`"
+            echo "- target commitish: \`${{ steps.release_final.outputs.targetCommitish }}\`"
+            echo "- publish run: ${{ steps.publish_run_final.outputs.url }}"
+            echo "- release assets: \`${{ steps.release_final.outputs.assetCount }}\`"
+            echo
+            echo "This workflow audits the published release state only. It does not publish packages, upload release assets, or mutate tags."
+          } >> "$GITHUB_STEP_SUMMARY"

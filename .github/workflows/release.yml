@@ -1,4 +1,5 @@
-name: Release
+name: Release Publish
+run-name: Release Publish ${{ github.event_name == 'workflow_dispatch' && (startsWith(inputs.tag, 'v') && inputs.tag || format('v{0}', inputs.tag)) || github.ref_name }}
 
 on:
   push:
