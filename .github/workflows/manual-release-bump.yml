@@ -114,16 +114,101 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Prepare bump branch
+      - name: Ensure skip-changelog label exists
         if: ${{ !inputs.dry_run }}
         shell: bash
         run: |
-          lease_args=()
+          if gh label list --search "skip-changelog" --json name --jq 'map(select(.name == "skip-changelog")) | length > 0' | grep -q true; then
+            exit 0
+          fi
 
-          if gh pr list --head "${{ steps.meta.outputs.branch }}" --state open --json number --jq 'length > 0' | grep -q true; then
-            echo "An open PR already exists for branch ${{ steps.meta.outputs.branch }}"
+          gh label create "skip-changelog" \
+            --color "6E7781" \
+            --description "Exclude automated release prep PRs from release notes."
+
+      - name: Resolve existing open PR
+        if: ${{ !inputs.dry_run }}
+        id: existing_pr
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          pr_json=$(gh pr list \
+            --head "${{ steps.meta.outputs.branch }}" \
+            --state open \
+            --json number,url,baseRefName,labels,headRefOid)
+
+          pr_number=$(printf '%s' "$pr_json" | jq -r '.[0].number // empty')
+          pr_url=$(printf '%s' "$pr_json" | jq -r '.[0].url // empty')
+          pr_base=$(printf '%s' "$pr_json" | jq -r '.[0].baseRefName // empty')
+          pr_head_sha=$(printf '%s' "$pr_json" | jq -r '.[0].headRefOid // empty')
+          has_skip_changelog=$(printf '%s' "$pr_json" | jq -r 'if (.[0].labels // []) | map(.name) | index("skip-changelog") then "true" else "false" end')
+
+          if [ -n "$pr_number" ] && [ "$pr_base" != "${{ inputs.base_ref }}" ]; then
+            echo "Existing PR $pr_url targets base '$pr_base', expected '${{ inputs.base_ref }}'."
             exit 1
           fi
+
+          if [ -n "$pr_number" ]; then
+            git fetch origin \
+              "refs/heads/${{ inputs.base_ref }}:refs/remotes/origin/${{ inputs.base_ref }}" \
+              "refs/heads/${{ steps.meta.outputs.branch }}:refs/remotes/origin/${{ steps.meta.outputs.branch }}"
+
+            fetched_head_sha=$(git rev-parse "refs/remotes/origin/${{ steps.meta.outputs.branch }}")
+            if [ "$pr_head_sha" != "$fetched_head_sha" ]; then
+              echo "Existing PR $pr_url head drifted from '$pr_head_sha' to '$fetched_head_sha' during validation."
+              exit 1
+            fi
+
+            pr_diff_files=$(git diff --name-only \
+              "refs/remotes/origin/${{ inputs.base_ref }}...refs/remotes/origin/${{ steps.meta.outputs.branch }}")
+
+            if [ "$pr_diff_files" != "package.json" ]; then
+              echo "Existing PR $pr_url is not a package.json-only bump."
+              printf '%s\n' "$pr_diff_files"
+              exit 1
+            fi
+
+            package_json_file=$(mktemp)
+            git show "refs/remotes/origin/${{ steps.meta.outputs.branch }}:package.json" > "$package_json_file"
+            node --input-type=module -e "
+              import fs from 'node:fs';
+
+              const expectedVersion = process.env.EXPECTED_VERSION;
+              const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+              const mismatchedOptionalDeps = Object.entries(pkg.optionalDependencies ?? {})
+                .filter(([, version]) => version !== expectedVersion)
+                .map(([name, version]) => name + '@' + version);
+
+              if (pkg.version !== expectedVersion || mismatchedOptionalDeps.length > 0) {
+                console.error('Existing PR head does not match expected bump version ' + expectedVersion + '.');
+                if (pkg.version !== expectedVersion) {
+                  console.error('package.json version: ' + pkg.version);
+                }
+                if (mismatchedOptionalDeps.length > 0) {
+                  console.error('optionalDependencies mismatches: ' + mismatchedOptionalDeps.join(', '));
+                }
+                process.exit(1);
+              }
+            " "$package_json_file"
+            rm -f "$package_json_file"
+          fi
+
+          if [ -n "$pr_number" ] && [ "$has_skip_changelog" != "true" ]; then
+            gh pr edit "$pr_number" --add-label skip-changelog
+          fi
+
+          {
+            echo "number=$pr_number"
+            echo "url=$pr_url"
+            echo "head_sha=${fetched_head_sha:-$pr_head_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Prepare bump branch
+        if: ${{ !inputs.dry_run && steps.existing_pr.outputs.number == '' }}
+        shell: bash
+        run: |
+          lease_args=()
 
           if git ls-remote --exit-code --heads origin "${{ steps.meta.outputs.branch }}" >/dev/null 2>&1; then
             echo "Remote branch ${{ steps.meta.outputs.branch }} already exists; refreshing it with the verified bump commit."
@@ -140,24 +225,17 @@ jobs:
         if: ${{ !inputs.dry_run }}
         shell: bash
         run: |
-          bump_sha=$(git rev-parse HEAD)
+          if [ -n "${{ steps.existing_pr.outputs.head_sha }}" ]; then
+            bump_sha="${{ steps.existing_pr.outputs.head_sha }}"
+          else
+            bump_sha=$(git rev-parse HEAD)
+          fi
+
           gh workflow run ci.yml \
             --ref "${{ steps.meta.outputs.branch }}" \
             -f target_sha="$bump_sha"
 
-      - name: Ensure skip-changelog label exists
-        if: ${{ !inputs.dry_run }}
-        shell: bash
-        run: |
-          if gh label list --search "skip-changelog" --json name --jq 'map(select(.name == "skip-changelog")) | length > 0' | grep -q true; then
-            exit 0
-          fi
-
-          gh label create "skip-changelog" \
-            --color "6E7781" \
-            --description "Exclude automated release prep PRs from release notes."
-
-      - name: Create draft PR or print manual link
+      - name: Create or reuse draft PR
         if: ${{ !inputs.dry_run }}
         shell: bash
         env:
@@ -196,8 +274,15 @@ jobs:
 
           if [ -n "$PR_CREATE_TOKEN" ]; then
             export GH_TOKEN="$PR_CREATE_TOKEN"
+            token_source="KRATOS_RELEASE_BOT_TOKEN"
           else
             export GH_TOKEN="$DEFAULT_GH_TOKEN"
+            token_source="github.token"
+          fi
+
+          if [ -n "${{ steps.existing_pr.outputs.url }}" ]; then
+            echo "Reusing existing PR: ${{ steps.existing_pr.outputs.url }}"
+            exit 0
           fi
 
           if pr_url=$(gh pr create \
@@ -211,26 +296,22 @@ jobs:
             exit 0
           fi
 
-          if grep -qiE "not permitted to create or approve pull requests|Resource not accessible by integration|createPullRequest" /tmp/gh-pr-create-error.txt; then
-            compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/${{ inputs.base_ref }}...${{ steps.meta.outputs.branch }}?expand=1"
+          compare_url="https://github.com/${GITHUB_REPOSITORY}/compare/${{ inputs.base_ref }}...${{ steps.meta.outputs.branch }}?expand=1"
 
-            {
-              echo "### Manual release bump branch is ready"
-              echo
-              echo "GitHub Actions could not create a pull request with the available token."
-              echo
-              echo "- base: \`${{ inputs.base_ref }}\`"
-              echo "- branch: \`${{ steps.meta.outputs.branch }}\`"
-              echo "- title: \`${{ steps.meta.outputs.title }}\`"
-              echo "- PR URL: $compare_url"
-              echo
-              echo "Configure \`KRATOS_RELEASE_BOT_TOKEN\` with pull request creation permission to let this workflow create the draft PR automatically."
-            } >> "$GITHUB_STEP_SUMMARY"
-
-            cat /tmp/gh-pr-create-error.txt
-            echo "::warning::GitHub Actions is not permitted to create pull requests; branch was pushed and CI was dispatched. Open the PR manually: $compare_url"
-            exit 0
-          fi
+          {
+            echo "### Manual release bump failed to create a PR"
+            echo
+            echo "The bump branch was pushed, but the workflow could not open a draft PR."
+            echo
+            echo "- base: \`${{ inputs.base_ref }}\`"
+            echo "- branch: \`${{ steps.meta.outputs.branch }}\`"
+            echo "- title: \`${{ steps.meta.outputs.title }}\`"
+            echo "- token source: \`$token_source\`"
+            echo "- compare URL: $compare_url"
+            echo
+            echo "Either enable repository Actions permission to create pull requests, or configure \`KRATOS_RELEASE_BOT_TOKEN\` with pull request creation permission."
+          } >> "$GITHUB_STEP_SUMMARY"
 
           cat /tmp/gh-pr-create-error.txt
+          echo "::error::Unable to create a draft PR for ${{ steps.meta.outputs.branch }}. See the step summary for required repository or token changes."
           exit 1
