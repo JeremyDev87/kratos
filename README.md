@@ -161,13 +161,19 @@ Alpha 후보 준비:
 - 태그를 만들기 전 `cargo test --workspace`, `npm run verify`, `npm run smoke`, fixture 기반 `scan/report/clean` smoke를 완료합니다
 - alpha 태그 생성과 push는 유지보수자 확인 후 진행합니다
 
-릴리스 workflow는 태그 push 또는 기존 태그를 지정한 수동 실행에서 아래를 수행합니다.
+`Release Publish` workflow는 태그 push 또는 기존 태그를 지정한 수동 실행에서 아래를 수행합니다.
 
 - release metadata를 해석하고 prerelease면 npm dist-tag를 `next`로 잡습니다
 - Node package verification과 Rust workspace test를 분리해서 실행합니다
 - macOS arm64/x64, Linux x64/arm64, Windows x64용 native artifact를 빌드합니다
 - platform addon npm package를 pack/smoke한 뒤 먼저 publish합니다
 - 마지막에 root `kratos` package를 publish하고 GitHub Release를 생성합니다
+
+`Release Published Follow-up` workflow는 GitHub Release가 published 되었을 때 아래를 수행합니다.
+
+- 해당 release tag에 대응하는 `Release Publish` run이 실제로 있었는지 확인합니다
+- 가장 최근 publish run이 success인지, release asset이 비어 있지 않은지 점검합니다
+- 이 workflow는 publish를 다시 하지 않고, release 게시 이후 상태만 감사(audit)합니다
 
 Stable 승격:
 
