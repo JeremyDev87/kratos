@@ -8,6 +8,7 @@ use crate::model::{PathAlias, ProjectConfig};
 use crate::suppressions::{parse_suppression_rules, SuppressionSource};
 
 const DEFAULT_CONFIG_FILENAME: &str = "kratos.config.json";
+const GITIGNORE_FILENAME: &str = ".gitignore";
 const PACKAGE_ENTRY_EXTENSIONS: &[&str] = &[
     ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts", ".d.ts", ".d.mts", ".d.cts",
 ];
@@ -70,9 +71,9 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
         base_url: base_url.clone(),
         roots: normalize_roots(&root, user_config.get("roots"))?,
         ignored_directories: normalize_ignored_directories(user_config.get("ignore")),
-        ignore_patterns: extract_required_string_array(
-            user_config.get("ignorePatterns"),
-            "ignorePatterns",
+        ignore_patterns: normalize_ignore_patterns(
+            &root,
+            extract_required_string_array(user_config.get("ignorePatterns"), "ignorePatterns")?,
         )?,
         explicit_entries: normalize_entry_paths(&root, user_config.get("entry"))?,
         package_entries: collect_package_entry_files(&root, &package_json),
@@ -119,6 +120,33 @@ fn read_loose_json_file(file_path: &Path) -> KratosResult<Option<JsonValue>> {
 
     let content = std::fs::read_to_string(file_path)?;
     Ok(Some(parse_loose_json(&content)?))
+}
+
+fn normalize_ignore_patterns(
+    root: &Path,
+    user_patterns: Vec<String>,
+) -> KratosResult<Vec<String>> {
+    let mut patterns = read_gitignore_patterns(&resolve_config_path(root, GITIGNORE_FILENAME))?;
+    patterns.extend(user_patterns);
+    Ok(patterns)
+}
+
+fn read_gitignore_patterns(file_path: &Path) -> KratosResult<Vec<String>> {
+    if !file_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(file_path)?;
+    Ok(content.lines().filter_map(normalize_gitignore_line).collect())
+}
+
+fn normalize_gitignore_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    Some(trimmed.to_string())
 }
 
 fn read_clean_min_confidence(user_config: &JsonValue) -> KratosResult<f32> {

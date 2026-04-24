@@ -208,6 +208,7 @@ You can place `kratos.config.json` in the project root. JSONC-style comments and
 
 - `ignore`: directory names added to the default ignore list.
 - `ignorePatterns`: `.gitignore`-style path patterns. Use `!` negation for exceptions.
+- After the default ignored directories, Kratos also reads the project root `.gitignore` automatically, then applies `ignorePatterns` for exceptions or overrides.
 - `entry`: root-relative files forced to be entrypoints.
 - `roots`: root-relative directories that limit scan scope.
 - `thresholds.cleanMinConfidence`: default confidence threshold for `clean`.
