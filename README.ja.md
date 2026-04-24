@@ -208,6 +208,7 @@ Totals: introduced 0, resolved 0, persisted 9
 
 - `ignore`: デフォルト ignore 一覧に追加するディレクトリ名です。
 - `ignorePatterns`: `.gitignore` スタイルのパスパターンです。`!` で例外を指定できます。
+- Kratos はデフォルトの ignored directory の後にプロジェクト root の `.gitignore` も自動的に読み込み、その後で `ignorePatterns` を適用して例外や override を追加できます。
 - `entry`: entrypoint として強制する、プロジェクト root からの相対ファイルです。
 - `roots`: スキャン範囲を制限する、プロジェクト root からの相対ディレクトリです。
 - `thresholds.cleanMinConfidence`: `clean` のデフォルト信頼度しきい値です。

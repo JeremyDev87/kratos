@@ -57,6 +57,8 @@ impl IgnoreMatcher {
         traversal_root: Option<&str>,
     ) -> bool {
         let normalized = normalize_relative_path(relative_dir);
+        let ignored_by_directory_name_rule =
+            self.is_ignored_by_directory_name_rule(&normalized, traversal_root);
         if !self.is_ignored_from_root(&normalized, true, traversal_root)
             && !self.ignores_descendants(&normalized, traversal_root)
         {
@@ -65,6 +67,9 @@ impl IgnoreMatcher {
 
         self.rules.iter().any(|rule| {
             if !rule.negated || !rule.may_match_descendant(&normalized) {
+                return false;
+            }
+            if ignored_by_directory_name_rule && !rule.has_explicit_path_prefix() {
                 return false;
             }
 
@@ -79,6 +84,20 @@ impl IgnoreMatcher {
     fn ignores_descendants(&self, relative_dir: &str, traversal_root: Option<&str>) -> bool {
         let probe = descendant_probe_path(relative_dir);
         !probe.is_empty() && self.is_ignored_from_root(&probe, false, traversal_root)
+    }
+
+    fn is_ignored_by_directory_name_rule(
+        &self,
+        relative_dir: &str,
+        traversal_root: Option<&str>,
+    ) -> bool {
+        let normalized_root = traversal_root.map(normalize_relative_path);
+        self.rules.iter().any(|rule| {
+            !rule.negated
+                && rule.directory_only
+                && rule.scoped_to_traversal_root
+                && rule.matches(relative_dir, true, normalized_root.as_deref())
+        })
     }
 }
 
@@ -165,6 +184,10 @@ impl IgnoreRule {
                 return self.matches_path(scoped_path);
             }
 
+            if self.negated {
+                return false;
+            }
+
             for ancestor in ancestor_directories(scoped_path) {
                 if self.matches_path(ancestor) {
                     return true;
@@ -172,6 +195,14 @@ impl IgnoreRule {
             }
 
             return false;
+        }
+
+        if !is_dir && !self.negated {
+            for ancestor in ancestor_directories(scoped_path) {
+                if self.matches_path(ancestor) {
+                    return true;
+                }
+            }
         }
 
         self.matches_path(scoped_path)
@@ -216,6 +247,10 @@ impl IgnoreRule {
         let prefix_with_slash = format!("{prefix}/");
 
         prefix == dir || prefix.starts_with(&dir_prefix) || dir.starts_with(&prefix_with_slash)
+    }
+
+    fn has_explicit_path_prefix(&self) -> bool {
+        self.has_slash && !self.literal_prefix.is_empty()
     }
 
     fn sample_path_at_or_below(&self, relative_dir: &str) -> Option<(String, bool)> {
@@ -709,5 +744,59 @@ mod tests {
         assert!(matcher.should_traverse_dir("src/foo"));
         assert!(!matcher.is_ignored("src/foo/keep.ts", false));
         assert!(matcher.is_ignored("src/foo/drop.ts", false));
+    }
+
+    #[test]
+    fn broad_wildcard_negations_do_not_reopen_default_ignored_directories() {
+        let matcher = IgnoreMatcher::new(
+            &["node_modules".to_string()],
+            &["!**/*.ts".to_string(), "!*.tsx".to_string()],
+        );
+
+        assert!(!matcher.should_traverse_dir("node_modules"));
+        assert!(!matcher.should_traverse_dir("node_modules/@demo"));
+    }
+
+    #[test]
+    fn negated_directory_only_patterns_reopen_traversal_without_reopening_all_descendants() {
+        let matcher = IgnoreMatcher::new(
+            &[],
+            &[
+                "src/generated/**".to_string(),
+                "!src/generated/".to_string(),
+                "!src/generated/keep.ts".to_string(),
+            ],
+        );
+
+        assert!(matcher.should_traverse_dir("src/generated"));
+        assert!(!matcher.is_ignored("src/generated/keep.ts", false));
+        assert!(matcher.is_ignored("src/generated/drop.ts", false));
+    }
+
+    #[test]
+    fn basename_negations_can_reopen_raw_ignored_descendants() {
+        let matcher = IgnoreMatcher::new(
+            &[],
+            &["src/generated/**".to_string(), "!keep.ts".to_string()],
+        );
+
+        assert!(matcher.should_traverse_dir("src/generated"));
+        assert!(!matcher.is_ignored("src/generated/keep.ts", false));
+        assert!(matcher.is_ignored("src/generated/drop.ts", false));
+    }
+
+    #[test]
+    fn slash_patterns_that_match_directories_still_ignore_descendant_files() {
+        let matcher = IgnoreMatcher::new(
+            &[],
+            &[
+                "src/generated".to_string(),
+                "!src/generated/keep.ts".to_string(),
+            ],
+        );
+
+        assert!(matcher.should_traverse_dir("src/generated"));
+        assert!(!matcher.is_ignored("src/generated/keep.ts", false));
+        assert!(matcher.is_ignored("src/generated/drop.ts", false));
     }
 }

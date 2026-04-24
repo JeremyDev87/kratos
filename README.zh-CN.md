@@ -208,6 +208,7 @@ Totals: introduced 0, resolved 0, persisted 9
 
 - `ignore`：添加到默认 ignore 列表的目录名。
 - `ignorePatterns`：`.gitignore` 风格的路径 pattern。可用 `!` 表示例外。
+- 在默认 ignored directory 之后，Kratos 也会自动读取项目 root 下的 `.gitignore`，随后应用 `ignorePatterns` 来添加例外或 override。
 - `entry`：强制作为 entrypoint 的项目 root 相对文件。
 - `roots`：限制扫描范围的项目 root 相对目录。
 - `thresholds.cleanMinConfidence`：`clean` 的默认置信度阈值。

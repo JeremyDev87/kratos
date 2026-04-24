@@ -62,6 +62,73 @@ fn scan_report_and_clean_work_for_demo_fixture() {
 }
 
 #[test]
+fn scan_does_not_reopen_node_modules_for_broad_negated_ignore_patterns() {
+    let project_root = copy_demo_app("cli-node-modules-ignore");
+    std::fs::write(
+        project_root.join("kratos.config.json"),
+        r#"{
+  "ignorePatterns": ["!**/*.ts"]
+}
+"#,
+    )
+    .expect("config should write");
+    let dependency_dir = project_root.join("node_modules/@demo");
+    std::fs::create_dir_all(&dependency_dir).expect("node_modules fixture should write");
+    std::fs::write(
+        dependency_dir.join("index.ts"),
+        "export const dependency = true;\n",
+    )
+    .expect("dependency fixture should write");
+
+    let scan = run_cli_in_dir(&project_root, &["scan", "--json"]);
+
+    assert!(scan.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&scan.stdout).expect("scan json should parse");
+    assert_eq!(report["summary"]["filesScanned"], 5);
+    let modules = report["graph"]["modules"]
+        .as_array()
+        .expect("modules should be an array");
+    assert!(
+        modules.iter().all(|module| !module["relativePath"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("node_modules/")),
+        "scan report should not include node_modules modules: {modules:#?}"
+    );
+}
+
+#[test]
+fn scan_respects_gitignore_and_config_overrides() {
+    let project_root = copy_demo_app("cli-gitignore");
+    std::fs::write(project_root.join(".gitignore"), "src/lib/**\n!src/lib/\n")
+        .expect("gitignore should write");
+    std::fs::write(
+        project_root.join("kratos.config.json"),
+        r#"{
+  "ignorePatterns": ["!src/lib/math.ts"]
+}
+"#,
+    )
+    .expect("config should write");
+
+    let scan = run_cli_in_dir(&project_root, &["scan", "--json"]);
+
+    assert!(scan.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&scan.stdout).expect("scan json should parse");
+    assert_eq!(report["summary"]["filesScanned"], 4);
+    let relative_paths = report["graph"]["modules"]
+        .as_array()
+        .expect("modules should be an array")
+        .iter()
+        .filter_map(|module| module["relativePath"].as_str())
+        .collect::<Vec<_>>();
+    assert!(relative_paths.contains(&"src/lib/math.ts"));
+    assert!(!relative_paths.contains(&"src/lib/broken.ts"));
+}
+
+#[test]
 fn clean_accepts_legacy_v1_reports_through_cli() {
     let project_root = copy_demo_app("cli-clean-v1-report");
     let source_report = repo_root().join("fixtures/parity/demo-app/latest-report.v1.json");

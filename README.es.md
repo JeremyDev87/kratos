@@ -208,6 +208,7 @@ Puedes colocar `kratos.config.json` en la raíz del proyecto. Se aceptan comenta
 
 - `ignore`: nombres de directorios añadidos a la lista de ignore por defecto.
 - `ignorePatterns`: patrones de ruta estilo `.gitignore`. Usa negación con `!` para excepciones.
+- Después de los directorios ignorados por defecto, Kratos también lee automáticamente el `.gitignore` de la raíz del proyecto y luego aplica `ignorePatterns` para excepciones u overrides.
 - `entry`: archivos relativos a la raíz del proyecto que deben forzarse como entrypoints.
 - `roots`: directorios relativos a la raíz del proyecto que limitan el alcance del escaneo.
 - `thresholds.cleanMinConfidence`: umbral de confianza por defecto para `clean`.
