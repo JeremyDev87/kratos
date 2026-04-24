@@ -8,33 +8,214 @@ Destroy dead code ruthlessly.
 
 [License](LICENSE) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [Sponsor](https://github.com/sponsors/JeremyDev87)
 
-Kratos is a CLI tool that finds dead code hidden inside your project, including unused files, broken imports, and orphan modules, then suggests safe removal candidates. The current distribution combines a Rust core/CLI with an npm launcher and focuses on conservative analysis and safe cleanup suggestions.
+Kratos is a CLI tool for JavaScript and TypeScript projects. It finds unused files, broken imports, unused exports, and orphaned modules, then writes the results to a report. The current implementation combines a Rust core/CLI with an npm launcher, and the npm package `@jeremyfellaz/kratos` loads an optional platform-specific native add-on.
+
+Kratos is an analysis tool for a safe cleanup workflow, not an automatic deletion bot. `clean` is dry-run by default, and files are only removed after you review the report and explicitly pass `--apply`.
 
 ## Core Capabilities
 
-- Detect unused files
-- Detect dead exports
-- Detect broken imports
-- Detect orphan modules and orphan components
-- Suggest safe deletion candidates
-- Generate codebase slimming reports
+- Detect unused files and orphaned component/module candidates
+- Detect broken internal imports
+- Detect unused export and import candidates
+- Apply Next.js `app/` / `pages/` route entrypoint heuristics
+- Resolve `tsconfig.json` / `jsconfig.json` `baseUrl` and `paths` aliases
+- Resolve `package.json` `main`, `module`, `types`, `bin`, and `exports` entrypoints
+- Print saved reports as summary, JSON, or Markdown
+- Compare finding changes between two reports
+- Preview safe deletion candidates with a confidence threshold
 
 ## Quick Start
 
 For package users, the default entrypoint is `npx`.
 
 ```bash
-npx @jeremyfellaz/kratos scan ./your-project
-npx @jeremyfellaz/kratos report ./your-project/.kratos/latest-report.json
-npx @jeremyfellaz/kratos clean ./your-project/.kratos/latest-report.json
+npx @jeremyfellaz/kratos scan ./my-app
+npx @jeremyfellaz/kratos report ./my-app
+npx @jeremyfellaz/kratos report ./my-app --format md
+npx @jeremyfellaz/kratos clean ./my-app --min-confidence 0.9
 ```
 
-- `scan` writes `.kratos/latest-report.json` by default.
-- `clean` is dry-run by default and only deletes files when you add `--apply`.
+Only add `--apply` after reviewing the report and deciding to delete the listed targets.
+
+```bash
+npx @jeremyfellaz/kratos clean ./my-app --apply --min-confidence 0.9
+```
+
+You can also compare reports from two points in time.
+
+```bash
+npx @jeremyfellaz/kratos scan ./my-app --output .kratos/before.json
+# clean up code or switch branches
+npx @jeremyfellaz/kratos scan ./my-app --output .kratos/after.json
+npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/after.json
+```
+
+When `scan --output` receives a relative path, it is resolved from the scanned root. The default saved report is `<root>/.kratos/latest-report.json`.
+
+## Commands
+
+### `kratos scan [root] [--output path] [--json]`
+
+Analyzes a project and writes a report JSON file.
+
+- Omit `root` to scan the current working directory.
+- `--output path` sets the report output path.
+- `--json` prints the full report JSON to stdout instead of the console summary.
+- The default output path is `<root>/.kratos/latest-report.json`.
+
+### `kratos report [report-path-or-root] [--format summary|json|md]`
+
+Prints a saved report in a human-readable format or as raw JSON.
+
+- `summary` is the default console summary.
+- `json` pretty-prints the saved report JSON.
+- `md` prints a Markdown report that is easy to share.
+- If the input is a project root, Kratos resolves `.kratos/latest-report.json` automatically.
+
+### `kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]`
+
+Compares finding changes between two reports.
+
+- The default format is `summary`.
+- `json` prints introduced/resolved/persisted findings in a machine-readable shape.
+- `md` prints a Markdown diff suitable for reviews or issues.
+- Each input can be either a report file path or a project root.
+
+### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
+
+Previews deletion candidates or deletes them.
+
+- Dry-run is the default behavior.
+- Files are deleted only when `--apply` is present.
+- `--min-confidence value` is a confidence threshold from `0.0` to `1.0`.
+- If `--min-confidence` is omitted, Kratos reads `thresholds.cleanMinConfidence` from `kratos.config.json`; when no setting exists, it uses `0.0`.
+
+## Output Examples
+
+Scanning `fixtures/demo-app` produces a summary like this.
+
+```text
+Kratos scan complete.
+
+Root: <root>
+Files scanned: 5
+Entrypoints: 1
+Broken imports: 1
+Orphan files: 2
+Dead exports: 3
+Unused imports: 0
+Route entrypoints: 1
+Deletion candidates: 2
+
+Saved report: <root>/.kratos/latest-report.json
+
+Broken imports:
+- <root>/src/lib/broken.ts -> ./missing-helper
+
+Orphan files:
+- <root>/src/components/DeadWidget.tsx
+- <root>/src/lib/broken.ts
+
+Dead exports:
+- <root>/src/components/DeadWidget.tsx#DeadWidget
+- <root>/src/lib/broken.ts#brokenFeature
+- <root>/src/lib/math.ts#multiply
+```
+
+`clean --min-confidence 0.9` separates deletion targets from candidates skipped by the threshold.
+
+```text
+Kratos clean dry run.
+
+Deletion targets: 1
+- <root>/src/components/DeadWidget.tsx (confidence 0.92, Component-like module has no inbound references.)
+
+Threshold-skipped targets: 1
+- <root>/src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
+
+Re-run with --apply to delete these files.
+```
+
+Comparing identical reports shows no introduced or resolved findings, only persisted counts.
+
+```text
+Kratos diff complete.
+
+Before: <before-report>
+After: <after-report>
+
+Broken imports: introduced 0, resolved 0, persisted 1
+Orphan files: introduced 0, resolved 0, persisted 2
+Dead exports: introduced 0, resolved 0, persisted 3
+Unused imports: introduced 0, resolved 0, persisted 0
+Route entrypoints: introduced 0, resolved 0, persisted 1
+Deletion candidates: introduced 0, resolved 0, persisted 2
+
+Totals: introduced 0, resolved 0, persisted 9
+```
+
+## Report Schema
+
+`scan` currently writes `schemaVersion: 2` reports.
+
+```json
+{
+  "schemaVersion": 2,
+  "summary": {
+    "filesScanned": 5,
+    "entrypoints": 1,
+    "brokenImports": 1,
+    "orphanFiles": 2,
+    "deadExports": 3,
+    "unusedImports": 0,
+    "routeEntrypoints": 1,
+    "deletionCandidates": 2
+  }
+}
+```
+
+`findings` contains `brokenImports`, `orphanFiles`, `deadExports`, `unusedImports`, `routeEntrypoints`, and `deletionCandidates`. `graph.modules` records analyzed module paths, entrypoint status, and import/export counts.
+
+## Configuration
+
+You can place `kratos.config.json` in the project root. JSONC-style comments and trailing commas are accepted.
+
+```json
+{
+  "ignore": ["storybook-static", "generated"],
+  "ignorePatterns": ["src/generated/**", "!src/generated/keep.ts"],
+  "entry": ["src/bootstrap.ts"],
+  "roots": ["src", "app", "pages"],
+  "thresholds": {
+    "cleanMinConfidence": 0.85
+  },
+  "suppressions": [
+    {
+      "kind": "deadExport",
+      "file": "src/components/LazyCard.tsx",
+      "export": "default",
+      "reason": "Loaded dynamically by route metadata."
+    },
+    {
+      "kind": "brokenImport",
+      "file": "src/legacy/shim.ts",
+      "source": "./generated-shim",
+      "reason": "Generated at deploy time."
+    }
+  ]
+}
+```
+
+- `ignore`: directory names added to the default ignore list.
+- `ignorePatterns`: `.gitignore`-style path patterns. Use `!` negation for exceptions.
+- `entry`: root-relative files forced to be entrypoints.
+- `roots`: root-relative directories that limit scan scope.
+- `thresholds.cleanMinConfidence`: default confidence threshold for `clean`.
+- `suppressions`: findings that should be intentionally ignored. `kind` must be one of `brokenImport`, `orphanFile`, `deadExport`, `unusedImport`, or `deletionCandidate`.
+
+If `.kratos/suppressions.json` exists, Kratos reads it with the same suppression format. `file` values must be relative to the project root.
 
 ## Local Development
-
-Work from a repository checkout with the Rust CLI and npm scripts.
 
 Requirements:
 
@@ -56,125 +237,34 @@ npm run verify
 npm run smoke
 ```
 
-To exercise the CLI from the repo itself, use:
+In a repository checkout, published native add-on packages may not exist yet, so these commands are safer than `npx @jeremyfellaz/kratos ...`.
 
 ```bash
 npm run scan -- ./fixtures/demo-app
 npm run report -- ./fixtures/demo-app/.kratos/latest-report.json
 npm run clean -- ./fixtures/demo-app/.kratos/latest-report.json
+cargo run -p kratos-cli -- diff ./fixtures/demo-app ./fixtures/demo-app
 ```
 
-In a checkout, published native addon packages may not be present yet, so prefer the commands above or `cargo run -p kratos-cli -- ...` instead of `npx @jeremyfellaz/kratos ...`.
+## Distribution
 
-## Commands
-
-### `kratos scan [root]`
-
-Scans a project and writes the latest report.
-
-- default output path: `<root>/.kratos/latest-report.json`
-- `--output <path>`: set a custom report output path
-- `--json`: print the full report JSON to stdout instead of the console summary
-
-### `kratos report [report-path-or-root]`
-
-Prints a saved report in summary, JSON, or Markdown form.
-
-- `--format summary`: default summary output
-- `--format json`: raw JSON output
-- `--format md`: Markdown report output
-- when given a project root instead of a report path, Kratos resolves the latest report automatically
-
-### `kratos clean [report-path-or-root]`
-
-Shows deletion candidates or deletes them.
-
-- dry-run by default
-- `--apply`: perform the actual deletion
-- when given a project root instead of a report path, Kratos resolves the latest report automatically
-
-## Report Schema
-
-Current Rust scan output writes `schemaVersion: 2`.
-
-```json
-{
-  "schemaVersion": 2,
-  "summary": {
-    "filesScanned": 5,
-    "entrypoints": 1,
-    "brokenImports": 1,
-    "orphanFiles": 2,
-    "deadExports": 3,
-    "unusedImports": 0,
-    "routeEntrypoints": 1,
-    "deletionCandidates": 2
-  }
-}
-```
-
-- the default saved location is `.kratos/latest-report.json`
-- `report` and `clean` accept either a saved report path or a project root
-- Markdown output includes broken imports, orphan files, dead exports, route entrypoints, and deletion candidates
-
-## Current Coverage
-
-- Rust analyzer with Oxc-based JS/TS import and export parsing
-- relative import / require / dynamic import
-- `tsconfig.json` / `jsconfig.json` `baseUrl` and `paths`
-- Next.js `app/` / `pages/` route entrypoint heuristics
-- `package.json` `main`, `module`, `bin`, and `exports` entrypoints
-- orphan file / orphan component candidates
-- dead export candidates
-- unused import candidates
-- broken internal imports
-
-## Configuration
-
-You can optionally add `kratos.config.json`.
-
-```json
-{
-  "ignore": ["storybook-static", "generated"],
-  "entry": ["src/bootstrap.ts"],
-  "roots": ["src", "app", "pages"]
-}
-```
-
-- `ignore`: additional directory names to skip
-- `entry`: file paths that should be forced as entrypoints
-- `roots`: folders to limit the scan scope
-
-## Recommended For
-
-- older React / Next.js projects
-- teams with many shipped features and accumulated code
-- teams looking for the right time to refactor
+- The root npm package is `@jeremyfellaz/kratos`.
+- The CLI binary name is `kratos`.
+- Platform add-on packages target macOS arm64/x64, Linux x64/arm64, and Windows x64.
+- Root package `optionalDependencies` point to platform add-on packages at the same release version.
+- A raw checkout may not have a native add-on, but the released package launcher loads the add-on for the current platform.
 
 ## Release Flow
 
-Kratos release automation is driven by semantic version tags such as `v0.2.0-alpha.1` and `v0.2.0`.
+Releases are driven by semver tags such as `vX.Y.Z` or `vX.Y.Z-prerelease.N`.
 
-Alpha readiness:
+- The `Manual Release Bump` workflow prepares a version-only PR that aligns `package.json` and platform `optionalDependencies`.
+- Before tagging, the same commit should pass `cargo test --workspace`, `npm run verify`, and native packaging CI.
+- The `Release Publish` workflow checks out the exact tag ref, verifies the Node package, runs Rust workspace tests, and builds platform native artifacts.
+- Platform add-on npm packages are packed, smoke-tested, and published first; the root package is published last, then the GitHub Release is created or updated.
+- The `Release Published Follow-up` workflow audits whether the published release has a matching successful publish run and release assets. It does not rerun publishing.
 
-- keep the root package version at `0.2.0-alpha.1`
-- before tagging, run `cargo test --workspace`, `npm run verify`, `npm run smoke`, and fixture-based `scan/report/clean` smoke checks
-- create and push the alpha tag only after maintainer confirmation
-
-The [release workflow](.github/workflows/release.yml) runs on a pushed tag or manual dispatch with an existing tag and then:
-
-- resolves release metadata and maps prereleases to npm dist-tag `next`
-- verifies the Node package and Rust workspace separately
-- builds native artifacts for macOS arm64/x64, Linux x64/arm64, and Windows x64
-- packs and smoke-tests per-platform addon npm packages before publishing them
-- publishes the root `kratos` package and creates a GitHub Release last
-
-Stable promotion:
-
-- after alpha verification, bump `package.json` from `0.2.0-alpha.1` to `0.2.0` in a version-only release-prep commit
-- create the stable tag `v0.2.0` as a separate step, which publishes to npm `latest`
-
-The recommended publishing setup is npm Trusted Publishing (OIDC). A repository `NPM_TOKEN` fallback can still be used when needed.
+Actions such as pushing release tags, publishing to npm, or publishing a GitHub Release should only happen after maintainer confirmation.
 
 ## Open Source
 
@@ -187,4 +277,4 @@ Kratos is open source under the MIT license.
 
 ## Note
 
-The current alpha uses a Rust core and Oxc-based parsing, but entrypoint detection and safe deletion candidates still include conservative heuristics. Always review the report before running `--apply`.
+Kratos combines conservative static analysis with heuristics. Dynamic imports, framework conventions, generated files, and runtime-only entrypoints can vary by project, so review the report and diff before running `--apply`.
