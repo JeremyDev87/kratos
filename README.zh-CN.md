@@ -97,6 +97,9 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 ```text
 Kratos scan complete.
 
+Impact: 6 actionable findings: 1 broken import, 2 cleanup candidates, 3 dead exports.
+Best next move: Fix broken imports before deleting files.
+
 Root: <root>
 Files scanned: 5
 Entrypoints: 1
@@ -109,17 +112,25 @@ Deletion candidates: 2
 
 Saved report: <root>/.kratos/latest-report.json
 
+Next steps:
+- Preview cleanup: kratos clean <root>/.kratos/latest-report.json
+- Shareable markdown: kratos report <root>/.kratos/latest-report.json --format md
+
 Broken imports:
-- <root>/src/lib/broken.ts -> ./missing-helper
+- src/lib/broken.ts -> ./missing-helper
+
+Top cleanup candidates:
+- src/components/DeadWidget.tsx (confidence 0.92, Component-like module has no inbound references.)
+- src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
 
 Orphan files:
-- <root>/src/components/DeadWidget.tsx
-- <root>/src/lib/broken.ts
+- src/components/DeadWidget.tsx
+- src/lib/broken.ts
 
 Dead exports:
-- <root>/src/components/DeadWidget.tsx#DeadWidget
-- <root>/src/lib/broken.ts#brokenFeature
-- <root>/src/lib/math.ts#multiply
+- src/components/DeadWidget.tsx#DeadWidget
+- src/lib/broken.ts#brokenFeature
+- src/lib/math.ts#multiply
 ```
 
 `clean --min-confidence 0.9` 会把删除目标和因阈值被跳过的候选项分开显示。
