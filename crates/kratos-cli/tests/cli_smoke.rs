@@ -34,10 +34,17 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(scan.status.success());
     let scan_stdout = String::from_utf8_lossy(&scan.stdout);
     assert!(scan_stdout.contains("Kratos scan complete."));
+    assert!(scan_stdout.contains(
+        "Impact: 6 actionable findings: 1 broken import, 2 cleanup candidates, 3 dead exports."
+    ));
+    assert!(scan_stdout.contains("Best next move: Fix broken imports before deleting files."));
     assert!(scan_stdout.contains("Files scanned: 5"));
     assert!(scan_stdout.contains("Broken imports: 1"));
     assert!(scan_stdout.contains("Route entrypoints: 1"));
     assert!(scan_stdout.contains("Deletion candidates: 2"));
+    assert!(scan_stdout.contains("Next steps:"));
+    assert!(scan_stdout.contains("Top cleanup candidates:"));
+    assert!(scan_stdout.contains("- src/components/DeadWidget.tsx"));
     assert!(report_path.exists());
 
     let report = run_cli(&[
@@ -49,6 +56,7 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(report.status.success());
     let report_stdout = String::from_utf8_lossy(&report.stdout);
     assert!(report_stdout.contains("# Kratos Report"));
+    assert!(report_stdout.contains("## Impact"));
     assert!(report_stdout.contains("- Route entrypoints: 1"));
     assert!(report_stdout.contains("## Broken imports"));
     assert!(report_stdout.contains("## Route entrypoints"));
