@@ -18,6 +18,46 @@ use crate::resolve::{resolve_import_target, unresolved_import};
 use crate::suppressions::{apply_suppressions, load_project_suppressions};
 
 const DEFAULT_CONFIG_FILENAME: &str = "kratos.config.json";
+const NEXT_APP_COMPONENT_DEFAULT_STEMS: &[&str] = &[
+    "page",
+    "layout",
+    "loading",
+    "error",
+    "not-found",
+    "global-not-found",
+    "forbidden",
+    "unauthorized",
+    "default",
+    "template",
+    "global-error",
+];
+const NEXT_APP_METADATA_DEFAULT_STEMS: &[&str] = &[
+    "robots",
+    "sitemap",
+    "icon",
+    "apple-icon",
+    "opengraph-image",
+    "twitter-image",
+    "manifest",
+];
+const NEXT_APP_METADATA_STEMS: &[&str] = &["page", "layout", "global-not-found"];
+const NEXT_APP_IMAGE_METADATA_STEMS: &[&str] =
+    &["icon", "apple-icon", "opengraph-image", "twitter-image"];
+const NEXT_APP_OPEN_GRAPH_IMAGE_STEMS: &[&str] = &["opengraph-image", "twitter-image"];
+const NEXT_APP_ICON_IMAGE_STEMS: &[&str] = &["icon", "apple-icon"];
+const NEXT_APP_STATIC_PARAMS_STEMS: &[&str] = &["page", "layout", "route"];
+const NEXT_APP_SEGMENT_CONFIG_STEMS: &[&str] = &[
+    "page",
+    "layout",
+    "route",
+    "robots",
+    "sitemap",
+    "icon",
+    "apple-icon",
+    "opengraph-image",
+    "twitter-image",
+    "manifest",
+];
 
 pub fn analyze_project(root: &Path) -> KratosResult<ReportV2> {
     let config = load_project_config(root)?;
@@ -177,6 +217,7 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
                     || export_usage.used_names.contains(&exported.name)
                     || is_framework_consumed_export(
                         module.entrypoint_kind.as_ref(),
+                        module.relative_path.as_str(),
                         exported.name.as_str(),
                     )
                 {
@@ -317,34 +358,13 @@ fn should_skip_dead_exports(entrypoint_kind: Option<&EntrypointKind>) -> bool {
 
 fn is_framework_consumed_export(
     entrypoint_kind: Option<&EntrypointKind>,
+    relative_path: &str,
     export_name: &str,
 ) -> bool {
     match entrypoint_kind {
-        Some(EntrypointKind::NextAppRoute) => matches!(
-            export_name,
-            "default"
-                | "metadata"
-                | "generateMetadata"
-                | "generateImageMetadata"
-                | "generateSitemaps"
-                | "viewport"
-                | "generateViewport"
-                | "generateStaticParams"
-                | "revalidate"
-                | "dynamic"
-                | "dynamicParams"
-                | "fetchCache"
-                | "runtime"
-                | "preferredRegion"
-                | "maxDuration"
-                | "GET"
-                | "POST"
-                | "PUT"
-                | "PATCH"
-                | "DELETE"
-                | "HEAD"
-                | "OPTIONS"
-        ),
+        Some(EntrypointKind::NextAppRoute) => {
+            is_next_app_framework_consumed_export(relative_path, export_name)
+        }
         Some(EntrypointKind::NextPagesRoute) => matches!(
             export_name,
             "default"
@@ -356,6 +376,49 @@ fn is_framework_consumed_export(
         ),
         _ => false,
     }
+}
+
+fn is_next_app_framework_consumed_export(relative_path: &str, export_name: &str) -> bool {
+    let Some(stem) = route_file_stem(relative_path) else {
+        return false;
+    };
+
+    match export_name {
+        "default" => {
+            matches_stem(stem, NEXT_APP_COMPONENT_DEFAULT_STEMS)
+                || matches_stem(stem, NEXT_APP_METADATA_DEFAULT_STEMS)
+        }
+        "metadata" | "generateMetadata" | "viewport" | "generateViewport" => {
+            matches_stem(stem, NEXT_APP_METADATA_STEMS)
+        }
+        "generateImageMetadata" => matches_stem(stem, NEXT_APP_IMAGE_METADATA_STEMS),
+        "generateSitemaps" => stem == "sitemap",
+        "alt" => matches_stem(stem, NEXT_APP_OPEN_GRAPH_IMAGE_STEMS),
+        "size" | "contentType" => {
+            matches_stem(stem, NEXT_APP_OPEN_GRAPH_IMAGE_STEMS)
+                || matches_stem(stem, NEXT_APP_ICON_IMAGE_STEMS)
+        }
+        "generateStaticParams" => matches_stem(stem, NEXT_APP_STATIC_PARAMS_STEMS),
+        "revalidate" | "dynamic" | "dynamicParams" | "fetchCache" | "runtime"
+        | "preferredRegion" | "maxDuration" => matches_stem(stem, NEXT_APP_SEGMENT_CONFIG_STEMS),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" => stem == "route",
+        _ => false,
+    }
+}
+
+fn route_file_stem(relative_path: &str) -> Option<&str> {
+    let file_name = relative_path.rsplit('/').next().unwrap_or(relative_path);
+    let (stem, extension) = file_name.rsplit_once('.')?;
+
+    if stem.is_empty() || extension.is_empty() || stem.contains('.') || extension.contains('.') {
+        return None;
+    }
+
+    Some(stem)
+}
+
+fn matches_stem(stem: &str, candidates: &[&str]) -> bool {
+    candidates.iter().any(|candidate| *candidate == stem)
 }
 
 fn is_route_like_file_name(file_name: &str) -> bool {
@@ -461,26 +524,92 @@ mod tests {
     fn next_route_entrypoints_only_skip_framework_consumed_exports() {
         assert!(is_framework_consumed_export(
             Some(&EntrypointKind::NextAppRoute),
+            "app/page.tsx",
+            "default"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/page.tsx",
             "generateMetadata"
         ));
         assert!(is_framework_consumed_export(
             Some(&EntrypointKind::NextAppRoute),
+            "app/opengraph-image.tsx",
             "generateImageMetadata"
         ));
         assert!(is_framework_consumed_export(
             Some(&EntrypointKind::NextAppRoute),
+            "app/opengraph-image.tsx",
+            "alt"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/opengraph-image.tsx",
+            "contentType"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/icon.tsx",
+            "size"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/icon.tsx",
+            "runtime"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/sitemap.ts",
             "generateSitemaps"
         ));
         assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/global-not-found.tsx",
+            "metadata"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/forbidden.tsx",
+            "default"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/api/route.ts",
+            "GET"
+        ));
+        assert!(is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/api/route.ts",
+            "dynamic"
+        ));
+        assert!(is_framework_consumed_export(
             Some(&EntrypointKind::NextPagesRoute),
+            "pages/index.tsx",
             "getStaticProps"
         ));
         assert!(is_framework_consumed_export(
             Some(&EntrypointKind::NextPagesRoute),
+            "pages/index.tsx",
             "getInitialProps"
         ));
         assert!(!is_framework_consumed_export(
             Some(&EntrypointKind::NextAppRoute),
+            "app/page.tsx",
+            "GET"
+        ));
+        assert!(!is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/loading.tsx",
+            "dynamic"
+        ));
+        assert!(!is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/page.tsx",
+            "alt"
+        ));
+        assert!(!is_framework_consumed_export(
+            Some(&EntrypointKind::NextAppRoute),
+            "app/page.tsx",
             "helper"
         ));
         assert!(!should_skip_dead_exports(Some(
