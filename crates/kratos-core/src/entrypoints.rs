@@ -3,6 +3,28 @@ use std::path::Path;
 use crate::error::KratosResult;
 use crate::model::{EntrypointKind, ProjectConfig};
 
+const NEXT_APP_ROUTE_STEMS: &[&str] = &[
+    "page",
+    "route",
+    "layout",
+    "loading",
+    "error",
+    "not-found",
+    "global-not-found",
+    "forbidden",
+    "unauthorized",
+    "default",
+    "template",
+    "global-error",
+    "robots",
+    "sitemap",
+    "icon",
+    "apple-icon",
+    "opengraph-image",
+    "twitter-image",
+    "manifest",
+];
+
 pub fn detect_entrypoint_kind(
     file_path: &Path,
     config: &ProjectConfig,
@@ -63,24 +85,7 @@ fn is_next_app_route(relative_path: &str) -> bool {
         && segments.len() >= 2
         && matches_file_stem(
             segments.last().copied().unwrap_or_default(),
-            &[
-                "page",
-                "route",
-                "layout",
-                "loading",
-                "error",
-                "not-found",
-                "default",
-                "template",
-                "global-error",
-                "robots",
-                "sitemap",
-                "icon",
-                "apple-icon",
-                "opengraph-image",
-                "twitter-image",
-                "manifest",
-            ],
+            NEXT_APP_ROUTE_STEMS,
         )
 }
 
@@ -104,6 +109,13 @@ mod tests {
         let template = detect_entrypoint_kind(&root.join("app/template.tsx"), &config)
             .expect("entrypoint detection should succeed");
         let global_error = detect_entrypoint_kind(&root.join("src/app/global-error.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let global_not_found =
+            detect_entrypoint_kind(&root.join("src/app/global-not-found.tsx"), &config)
+                .expect("entrypoint detection should succeed");
+        let forbidden = detect_entrypoint_kind(&root.join("src/app/forbidden.tsx"), &config)
+            .expect("entrypoint detection should succeed");
+        let unauthorized = detect_entrypoint_kind(&root.join("src/app/unauthorized.tsx"), &config)
             .expect("entrypoint detection should succeed");
         let parallel_default =
             detect_entrypoint_kind(&root.join("app/@modal/default.tsx"), &config)
@@ -130,6 +142,9 @@ mod tests {
         assert_eq!(nested, Some(EntrypointKind::NextAppRoute));
         assert_eq!(template, Some(EntrypointKind::NextAppRoute));
         assert_eq!(global_error, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(global_not_found, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(forbidden, Some(EntrypointKind::NextAppRoute));
+        assert_eq!(unauthorized, Some(EntrypointKind::NextAppRoute));
         assert_eq!(parallel_default, Some(EntrypointKind::NextAppRoute));
         assert_eq!(robots, Some(EntrypointKind::NextAppRoute));
         assert_eq!(opengraph, Some(EntrypointKind::NextAppRoute));

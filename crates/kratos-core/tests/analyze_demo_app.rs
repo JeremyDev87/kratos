@@ -242,6 +242,136 @@ export const helper = 1;
 }
 
 #[test]
+fn analyze_project_skips_next_app_framework_exports_for_route_conventions() {
+    let project = TestProject::new("next-app-framework-exports");
+    project.write(
+        "src/app/page.tsx",
+        r#"export const metadata = { title: "Home" };
+export const viewport = { themeColor: "black" };
+export const dynamic = "force-static";
+export async function generateStaticParams() { return []; }
+export default function Page() { return null; }
+export const helperPage = 1;
+"#,
+    );
+    project.write(
+        "src/app/layout.tsx",
+        r#"export function generateMetadata() { return { title: "Layout" }; }
+export function generateViewport() { return { themeColor: "white" }; }
+export const revalidate = 60;
+export default function Layout({ children }: { children: unknown }) { return children; }
+export const helperLayout = 1;
+"#,
+    );
+    project.write(
+        "src/app/error.tsx",
+        r#"export default function ErrorPage() { return null; }
+export const helperError = 1;
+"#,
+    );
+    project.write(
+        "src/app/global-not-found.tsx",
+        r#"export const metadata = { title: "Not found" };
+export default function GlobalNotFound() { return <html><body>Not found</body></html>; }
+export const helperGlobalNotFound = 1;
+"#,
+    );
+    project.write(
+        "src/app/forbidden.tsx",
+        r#"export default function Forbidden() { return null; }
+export const helperForbidden = 1;
+"#,
+    );
+    project.write(
+        "src/app/unauthorized.tsx",
+        r#"export default function Unauthorized() { return null; }
+export const helperUnauthorized = 1;
+"#,
+    );
+    project.write(
+        "src/app/loading.tsx",
+        r#"export default function Loading() { return null; }
+export const helperLoading = 1;
+"#,
+    );
+    project.write(
+        "src/app/@modal/default.tsx",
+        r#"export default function ModalDefault() { return null; }
+export const helperDefault = 1;
+"#,
+    );
+    project.write(
+        "src/app/api/route.ts",
+        r#"export const runtime = "nodejs";
+export const maxDuration = 5;
+export async function generateStaticParams() { return []; }
+export async function GET() { return Response.json({ ok: true }); }
+export async function POST() { return Response.json({ ok: true }); }
+export const helperRoute = 1;
+"#,
+    );
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+    let mut dead_exports = report
+        .findings
+        .dead_exports
+        .iter()
+        .map(|item| {
+            (
+                item.file
+                    .strip_prefix(project.root())
+                    .unwrap_or(&item.file)
+                    .to_path_buf(),
+                item.export_name.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    dead_exports.sort();
+
+    assert_eq!(report.summary.entrypoints, 9);
+    assert_eq!(report.summary.route_entrypoints, 9);
+    assert_eq!(report.summary.dead_exports, 9);
+    assert_eq!(
+        dead_exports,
+        vec![
+            (
+                PathBuf::from("src/app/@modal/default.tsx"),
+                "helperDefault".to_string(),
+            ),
+            (
+                PathBuf::from("src/app/api/route.ts"),
+                "helperRoute".to_string(),
+            ),
+            (
+                PathBuf::from("src/app/error.tsx"),
+                "helperError".to_string(),
+            ),
+            (
+                PathBuf::from("src/app/forbidden.tsx"),
+                "helperForbidden".to_string(),
+            ),
+            (
+                PathBuf::from("src/app/global-not-found.tsx"),
+                "helperGlobalNotFound".to_string(),
+            ),
+            (
+                PathBuf::from("src/app/layout.tsx"),
+                "helperLayout".to_string(),
+            ),
+            (
+                PathBuf::from("src/app/loading.tsx"),
+                "helperLoading".to_string(),
+            ),
+            (PathBuf::from("src/app/page.tsx"), "helperPage".to_string(),),
+            (
+                PathBuf::from("src/app/unauthorized.tsx"),
+                "helperUnauthorized".to_string(),
+            ),
+        ]
+    );
+}
+
+#[test]
 fn analyze_project_skips_next_metadata_helpers_for_metadata_files() {
     let project = TestProject::new("metadata-helpers");
     project.write(
@@ -249,22 +379,55 @@ fn analyze_project_skips_next_metadata_helpers_for_metadata_files() {
         r#"export function generateImageMetadata() {
   return [{ id: "1", contentType: "image/png", size: { width: 1200, height: 630 } }];
 }
+export const alt = "About Acme";
+export const size = { width: 1200, height: 630 };
+export const contentType = "image/png";
+export const runtime = "edge";
 export default function Image() { return null; }
-export const helper = 1;
+export const helperImage = 1;
+"#,
+    );
+    project.write(
+        "app/icon.tsx",
+        r#"export const size = { width: 32, height: 32 };
+export const contentType = "image/png";
+export const preferredRegion = "global";
+export default function Icon() { return null; }
+export const helperIcon = 1;
 "#,
     );
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.summary.entrypoints, 1);
-    assert_eq!(report.summary.route_entrypoints, 1);
-    assert_eq!(report.summary.dead_exports, 1);
-    assert_eq!(report.findings.dead_exports.len(), 1);
+    let mut dead_exports = report
+        .findings
+        .dead_exports
+        .iter()
+        .map(|item| {
+            (
+                item.file
+                    .strip_prefix(project.root())
+                    .unwrap_or(&item.file)
+                    .to_path_buf(),
+                item.export_name.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    dead_exports.sort();
+
+    assert_eq!(report.summary.entrypoints, 2);
+    assert_eq!(report.summary.route_entrypoints, 2);
+    assert_eq!(report.summary.dead_exports, 2);
     assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("app/opengraph-image.tsx")
+        dead_exports,
+        vec![
+            (PathBuf::from("app/icon.tsx"), "helperIcon".to_string()),
+            (
+                PathBuf::from("app/opengraph-image.tsx"),
+                "helperImage".to_string(),
+            ),
+        ]
     );
-    assert_eq!(report.findings.dead_exports[0].export_name, "helper");
 }
 
 #[test]
