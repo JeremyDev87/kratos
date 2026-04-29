@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use kratos_core::analyze::analyze_project;
 use kratos_core::config::load_clean_min_confidence;
 use kratos_core::config::load_project_config;
 use kratos_core::discover::collect_source_files;
@@ -198,7 +199,8 @@ fn load_clean_min_confidence_rejects_non_object_thresholds() {
 "#,
     );
 
-    let error = load_clean_min_confidence(project.root()).expect_err("thresholds shape should fail");
+    let error =
+        load_clean_min_confidence(project.root()).expect_err("thresholds shape should fail");
     assert!(
         error
             .to_string()
@@ -218,7 +220,8 @@ fn load_clean_min_confidence_rejects_missing_key_when_thresholds_is_present() {
 "#,
     );
 
-    let error = load_clean_min_confidence(project.root()).expect_err("missing threshold key should fail");
+    let error =
+        load_clean_min_confidence(project.root()).expect_err("missing threshold key should fail");
     assert!(
         error
             .to_string()
@@ -457,7 +460,10 @@ fn collect_source_files_honors_explicit_roots_even_when_root_name_is_ignored_by_
     let config = load_project_config(project.root()).expect("config should load");
     let discovered = collect_source_files(&config).expect("source discovery should succeed");
 
-    assert_eq!(discovered, vec![project.root().join("tests/unit/sample.ts")]);
+    assert_eq!(
+        discovered,
+        vec![project.root().join("tests/unit/sample.ts")]
+    );
 }
 
 #[test]
@@ -517,12 +523,18 @@ fn collect_source_files_does_not_reopen_unrelated_ignored_trees_for_negations() 
 "#,
     );
     project.write("src/generated/keep.ts", "export const keep = true;\n");
-    project.write("node_modules/pkg/src/generated/keep.ts", "export const nested = true;\n");
+    project.write(
+        "node_modules/pkg/src/generated/keep.ts",
+        "export const nested = true;\n",
+    );
 
     let config = load_project_config(project.root()).expect("config should load");
     let discovered = collect_source_files(&config).expect("source discovery should succeed");
 
-    assert_eq!(discovered, vec![project.root().join("src/generated/keep.ts")]);
+    assert_eq!(
+        discovered,
+        vec![project.root().join("src/generated/keep.ts")]
+    );
 }
 
 #[test]
@@ -536,7 +548,10 @@ fn collect_source_files_does_not_reopen_node_modules_for_broad_negations() {
 "#,
     );
     project.write("src/main.ts", "export const main = true;\n");
-    project.write("node_modules/@demo/index.ts", "export const dependency = true;\n");
+    project.write(
+        "node_modules/@demo/index.ts",
+        "export const dependency = true;\n",
+    );
 
     let config = load_project_config(project.root()).expect("config should load");
     let discovered = collect_source_files(&config).expect("source discovery should succeed");
@@ -915,6 +930,141 @@ fn load_project_config_resolves_extensionless_and_directory_package_entries() {
     assert!(config
         .package_entries
         .contains(&project.root().join("src/routes/index.ts")));
+}
+
+#[test]
+fn load_project_config_collects_script_and_workflow_entries() {
+    let project = TestProject::new("script-workflow-entries");
+    project.write(
+        "package.json",
+        r#"{
+  "scripts": {
+    "generate": "node scripts/generate-roster-json.mjs",
+    "build:report": "tsx scripts/build-report.ts",
+    "node:loader": "node --loader ts-node/esm scripts/loader-entry.ts",
+    "node:require": "node -r dotenv/config scripts/required-entry.mjs",
+    "node:import": "node --import ./scripts/register.mjs scripts/imported-entry.mjs",
+    "validate:setup": "bash scripts/cleanup-tokens.sh",
+    "nested": "npm run generate"
+  }
+}
+"#,
+    );
+    project.write(
+        ".github/workflows/pr-daily.yml",
+        r#"
+name: PR Daily
+jobs:
+  sync:
+    steps:
+      - run: node scripts/github-pr-daily-insert.mjs
+      - run: |
+          npm run build:report
+          sh scripts/workflow-cleanup.sh
+      - working-directory: scripts
+        run: node local-workflow.mjs
+"#,
+    );
+    project.write(
+        ".github/actions/sync/action.yml",
+        r#"
+runs:
+  using: composite
+  steps:
+    - run: node scripts/action-entry.mjs
+"#,
+    );
+    project.write(
+        "scripts/generate-roster-json.mjs",
+        "export const generate = true;\n",
+    );
+    project.write(
+        "scripts/build-report.ts",
+        "export const buildReport = true;\n",
+    );
+    project.write("scripts/loader-entry.ts", "export const loader = true;\n");
+    project.write(
+        "scripts/required-entry.mjs",
+        "export const required = true;\n",
+    );
+    project.write("scripts/register.mjs", "export const register = true;\n");
+    project.write(
+        "scripts/imported-entry.mjs",
+        "export const imported = true;\n",
+    );
+    project.write("scripts/cleanup-tokens.sh", "echo cleanup\n");
+    project.write(
+        "scripts/github-pr-daily-insert.mjs",
+        "export const sync = true;\n",
+    );
+    project.write("scripts/workflow-cleanup.sh", "echo workflow cleanup\n");
+    project.write("scripts/local-workflow.mjs", "export const local = true;\n");
+    project.write("scripts/action-entry.mjs", "export const action = true;\n");
+
+    let config = load_project_config(project.root()).expect("config should load");
+
+    for entry in [
+        "scripts/generate-roster-json.mjs",
+        "scripts/build-report.ts",
+        "scripts/loader-entry.ts",
+        "scripts/required-entry.mjs",
+        "scripts/register.mjs",
+        "scripts/imported-entry.mjs",
+        "scripts/cleanup-tokens.sh",
+        "scripts/github-pr-daily-insert.mjs",
+        "scripts/workflow-cleanup.sh",
+        "scripts/local-workflow.mjs",
+        "scripts/action-entry.mjs",
+    ] {
+        assert!(
+            config.package_entries.contains(&project.root().join(entry)),
+            "{entry} should be collected as an entrypoint"
+        );
+    }
+}
+
+#[test]
+fn analyze_project_excludes_script_workflow_and_tooling_entries_from_deletion_candidates() {
+    let project = TestProject::new("script-workflow-analysis");
+    project.write(
+        "package.json",
+        r#"{
+  "scripts": {
+    "generate": "node scripts/generate.mjs"
+  }
+}
+"#,
+    );
+    project.write(
+        ".github/workflows/sync.yml",
+        r#"
+name: Sync
+jobs:
+  run:
+    steps:
+      - run: node scripts/from-workflow.mjs
+"#,
+    );
+    project.write("scripts/generate.mjs", "export const generate = true;\n");
+    project.write(
+        "scripts/from-workflow.mjs",
+        "export const fromWorkflow = true;\n",
+    );
+    project.write("eslint.config.mjs", "export default [];\n");
+    project.write("src/unused.ts", "export const unused = true;\n");
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+    let deletion_candidates = report
+        .findings
+        .deletion_candidates
+        .iter()
+        .map(|finding| finding.file.clone())
+        .collect::<Vec<_>>();
+
+    assert!(!deletion_candidates.contains(&project.root().join("scripts/generate.mjs")));
+    assert!(!deletion_candidates.contains(&project.root().join("scripts/from-workflow.mjs")));
+    assert!(!deletion_candidates.contains(&project.root().join("eslint.config.mjs")));
+    assert!(deletion_candidates.contains(&project.root().join("src/unused.ts")));
 }
 
 #[test]

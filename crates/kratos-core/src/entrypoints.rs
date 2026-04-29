@@ -206,12 +206,15 @@ mod tests {
 
         let real_config = detect_entrypoint_kind(&root.join("next.config.js"), &config)
             .expect("entrypoint detection should succeed");
+        let eslint_config = detect_entrypoint_kind(&root.join("eslint.config.mjs"), &config)
+            .expect("entrypoint detection should succeed");
         let test_config = detect_entrypoint_kind(&root.join("next.config.test.ts"), &config)
             .expect("entrypoint detection should succeed");
         let backup_config = detect_entrypoint_kind(&root.join("vite.config.backup.js"), &config)
             .expect("entrypoint detection should succeed");
 
         assert_eq!(real_config, Some(EntrypointKind::ToolingEntry));
+        assert_eq!(eslint_config, Some(EntrypointKind::ToolingEntry));
         assert_eq!(test_config, None);
         assert_eq!(backup_config, None);
     }
@@ -241,6 +244,7 @@ fn is_tooling_entry(relative_path: &str) -> bool {
     let file_name = relative_path.rsplit('/').next().unwrap_or(relative_path);
     [
         "next",
+        "eslint",
         "vite",
         "webpack",
         "rollup",
