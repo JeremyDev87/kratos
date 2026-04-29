@@ -552,6 +552,28 @@ const LazyChunk = React.lazy(loader);
 }
 
 #[test]
+fn parser_marks_generic_loader_identifier_call_as_unknown_usage() {
+    let parsed = parse_module_source(
+        Path::new("index.tsx"),
+        r#"
+const loader = () => import("./Chunk");
+const dynamic = (loader) => loader;
+const LazyChunk = dynamic(loader);
+"#,
+    )
+    .expect("parser should succeed");
+
+    let dynamic_import = parsed
+        .imports
+        .iter()
+        .find(|entry| entry.source == "./Chunk")
+        .expect("dynamic import should be recorded");
+
+    assert_eq!(dynamic_import.kind, ImportKind::Dynamic);
+    assert!(dynamic_import.specifiers.is_empty());
+}
+
+#[test]
 fn parser_marks_lazy_default_usage_for_hoisted_function_loader_identifier() {
     let parsed = parse_module_source(
         Path::new("index.tsx"),

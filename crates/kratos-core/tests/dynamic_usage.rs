@@ -445,13 +445,11 @@ export default function InnerChunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert!(
-        report
-            .findings
-            .dead_exports
-            .iter()
-            .all(|finding| finding.file != project.root().join("src/InnerChunk.tsx"))
-    );
+    assert!(report
+        .findings
+        .dead_exports
+        .iter()
+        .all(|finding| finding.file != project.root().join("src/InnerChunk.tsx")));
 
     let chunk = report
         .modules
@@ -470,6 +468,127 @@ export default function InnerChunk() {
         chunk.importers[0].specifiers[0].imported.as_deref(),
         Some("default")
     );
+}
+
+#[test]
+fn analyze_project_treats_unqualified_dynamic_import_as_unknown_usage() {
+    let project = TestProject::new("unqualified-dynamic-import");
+    project.write(
+        "src/consumer.ts",
+        r#"
+const chunk = import("./Chunk");
+"#,
+    );
+    project.write(
+        "src/Chunk.ts",
+        r#"
+export default function Chunk() {
+  return null;
+}
+
+export const Helper = true;
+"#,
+    );
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+
+    assert!(report.findings.dead_exports.is_empty());
+
+    let chunk = report
+        .modules
+        .iter()
+        .find(|module| module.relative_path == "src/Chunk.ts")
+        .expect("chunk module should exist");
+
+    assert_eq!(chunk.imported_by_count, 1);
+    assert_eq!(chunk.importers.len(), 1);
+    assert_eq!(chunk.importers[0].kind, ImportKind::Dynamic);
+    assert!(chunk.importers[0].specifiers.is_empty());
+}
+
+#[test]
+fn analyze_project_treats_dynamic_wrapper_helper_loader_as_unknown_usage() {
+    let project = TestProject::new("dynamic-wrapper-helper-loader");
+    project.write(
+        "src/consumer.tsx",
+        r#"
+import dynamic from "next/dynamic";
+
+function loadClientChart(loader: () => Promise<unknown>) {
+  return dynamic(loader);
+}
+
+const consumer = loadClientChart(() => import("./CycleTimeChart"));
+"#,
+    );
+    project.write(
+        "src/CycleTimeChart.tsx",
+        r#"
+export default function CycleTimeChart() {
+  return null;
+}
+
+export const chartConfig = {};
+"#,
+    );
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+
+    assert!(report.findings.dead_exports.is_empty());
+
+    let chart = report
+        .modules
+        .iter()
+        .find(|module| module.relative_path == "src/CycleTimeChart.tsx")
+        .expect("chart module should exist");
+
+    assert_eq!(chart.imported_by_count, 1);
+    assert_eq!(chart.importers.len(), 1);
+    assert_eq!(chart.importers[0].kind, ImportKind::Dynamic);
+    assert!(chart.importers[0].specifiers.is_empty());
+}
+
+#[test]
+fn analyze_project_treats_dynamic_wrapper_helper_loader_identifier_as_unknown_usage() {
+    let project = TestProject::new("dynamic-wrapper-helper-loader-identifier");
+    project.write(
+        "src/consumer.tsx",
+        r#"
+import dynamic from "next/dynamic";
+
+function loadClientChart(loader: () => Promise<unknown>) {
+  return dynamic(loader);
+}
+
+const chartLoader = () => import("./CycleTimeChart");
+const consumer = loadClientChart(chartLoader);
+"#,
+    );
+    project.write(
+        "src/CycleTimeChart.tsx",
+        r#"
+export default function CycleTimeChart() {
+  return null;
+}
+
+export const chartConfig = {};
+"#,
+    );
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+
+    assert!(report.findings.dead_exports.is_empty());
+
+    let chart = report
+        .modules
+        .iter()
+        .find(|module| module.relative_path == "src/CycleTimeChart.tsx")
+        .expect("chart module should exist");
+
+    assert_eq!(chart.imported_by_count, 1);
+    assert_eq!(chart.importers.len(), 1);
+    assert_eq!(chart.importers[0].kind, ImportKind::Dynamic);
+    assert!(chart.importers[0].specifiers.is_empty());
 }
 
 #[test]
@@ -713,7 +832,7 @@ export const Named = true;
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 2);
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1192,12 +1311,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.js")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1501,12 +1615,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1548,12 +1657,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1588,12 +1692,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.js")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1628,12 +1727,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.js")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1669,12 +1763,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1714,12 +1803,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.js")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1762,12 +1846,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1811,12 +1890,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1856,12 +1930,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1899,12 +1968,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.js")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules
@@ -1942,12 +2006,7 @@ export default function Chunk() {
 
     let report = analyze_project(project.root()).expect("project should analyze");
 
-    assert_eq!(report.findings.dead_exports.len(), 1);
-    assert_eq!(
-        report.findings.dead_exports[0].file,
-        project.root().join("src/Chunk.tsx")
-    );
-    assert_eq!(report.findings.dead_exports[0].export_name, "default");
+    assert!(report.findings.dead_exports.is_empty());
 
     let chunk = report
         .modules

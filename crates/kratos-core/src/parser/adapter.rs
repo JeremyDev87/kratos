@@ -28,10 +28,12 @@ pub fn parse_module_source(path: &Path, source: &str) -> KratosResult<ParsedModu
     let imports = imports::collect_imports(&parsed.program)?;
     let exports = exports::collect_exports(&parsed.program)?;
     let unused_imports = unused_imports::detect_unused_imports(&parsed.program, &imports)?;
+    let is_pure_reexport_barrel = exports::is_pure_reexport_barrel(&parsed.program);
 
     Ok(ParsedModule {
         imports,
         exports,
         unused_imports,
+        is_pure_reexport_barrel,
     })
 }

@@ -9,9 +9,9 @@ use crate::entrypoints::detect_entrypoint_kind;
 use crate::error::KratosResult;
 use crate::model::{
     BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportRecord,
-    FindingSet, ImportSpecifierKind, ImportUsageRecord, ModuleRecord, OrphanFileFinding,
-    OrphanKind, ProjectConfig, ReportV2, ResolvedImportRecord, RouteEntrypointFinding,
-    SummaryCounts, UnusedImportFinding,
+    FindingSet, ImportKind, ImportSpecifierKind, ImportUsageRecord, ModuleRecord,
+    OrphanFileFinding, OrphanKind, ProjectConfig, ReportV2, ResolvedImportRecord,
+    RouteEntrypointFinding, SummaryCounts, UnusedImportFinding,
 };
 use crate::parser::parse_module_source;
 use crate::resolve::{resolve_import_target, unresolved_import};
@@ -67,11 +67,13 @@ pub fn analyze_project(root: &Path) -> KratosResult<ReportV2> {
 pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
     let files = collect_source_files(config)?;
     let mut modules = BTreeMap::new();
+    let mut pure_barrel_files = BTreeSet::new();
 
     for file_path in files {
         let source = std::fs::read_to_string(&file_path)?;
         let parsed = parse_module_source(&file_path, &source)?;
         let entrypoint_kind = detect_entrypoint_kind(&file_path, config)?;
+        let is_pure_barrel = parsed.is_pure_reexport_barrel;
 
         modules.insert(
             file_path.clone(),
@@ -90,6 +92,10 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
                 export_count: 0,
             },
         );
+
+        if is_pure_barrel {
+            pure_barrel_files.insert(file_path);
+        }
     }
 
     let mut broken_imports = Vec::new();
@@ -189,7 +195,9 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
             });
         }
 
-        if module.imported_by.is_empty() && module.entrypoint_kind.is_none() {
+        let is_pure_barrel = pure_barrel_files.contains(&module.file_path);
+
+        if module.imported_by.is_empty() && module.entrypoint_kind.is_none() && !is_pure_barrel {
             let classification = classify_orphan(&module.relative_path);
 
             orphan_files.push(OrphanFileFinding {
@@ -209,7 +217,8 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         let export_usage = summarize_export_usage(module);
         let should_skip_dead_exports = should_skip_dead_exports(module.entrypoint_kind.as_ref())
             || export_usage.uses_namespace
-            || export_usage.uses_unknown;
+            || export_usage.uses_unknown
+            || is_pure_barrel;
 
         if !should_skip_dead_exports {
             for exported in &module.exports {
@@ -296,6 +305,11 @@ fn summarize_export_usage(module: &ModuleRecord) -> ExportUsage {
     let mut uses_unknown = false;
 
     for importer in &module.importers {
+        if importer.kind == ImportKind::Dynamic && importer.specifiers.is_empty() {
+            uses_unknown = true;
+            continue;
+        }
+
         for specifier in &importer.specifiers {
             match specifier.kind {
                 ImportSpecifierKind::Namespace => uses_namespace = true,

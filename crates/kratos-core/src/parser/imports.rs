@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use oxc_ast::ast::{
     AssignmentExpression, BindingIdentifier, BindingPattern, BlockStatement, CallExpression,
-    ExportAllDeclaration, ExportNamedDeclaration, Expression, ExpressionStatement, FunctionBody,
-    Function, FunctionType, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression,
+    ExportAllDeclaration, ExportNamedDeclaration, Expression, ExpressionStatement, Function,
+    FunctionBody, FunctionType, ImportDeclaration, ImportDeclarationSpecifier, ImportExpression,
     ImportOrExportKind, ModuleExportName, ObjectExpression, ObjectPropertyKind, Program,
     PropertyKey, PropertyKind, Statement, TSImportEqualsDeclaration, TSModuleReference,
-    VariableDeclarator, VariableDeclarationKind,
+    VariableDeclarationKind, VariableDeclarator,
 };
 use oxc_ast_visit::{walk, Visit};
 use oxc_syntax::scope::{ScopeFlags, ScopeId};
@@ -20,13 +20,12 @@ pub fn collect_imports(program: &Program<'_>) -> KratosResult<Vec<ImportRecord>>
     let scope_dynamic_bindings = collect_scoped_dynamic_bindings(program, &scope_shadows);
     let scope_loader_bindings = collect_scoped_loader_bindings(program);
     let scope_then_callback_bindings = collect_scoped_then_callback_bindings(program);
-    let mut collector =
-        ImportCollector::new(
-            scope_shadows,
-            scope_dynamic_bindings,
-            scope_loader_bindings,
-            scope_then_callback_bindings,
-        );
+    let mut collector = ImportCollector::new(
+        scope_shadows,
+        scope_dynamic_bindings,
+        scope_loader_bindings,
+        scope_then_callback_bindings,
+    );
     collector.visit_program(program);
     Ok(collector.imports)
 }
@@ -81,7 +80,6 @@ impl ImportCollector {
             imports: Vec::new(),
         }
     }
-
 }
 
 #[derive(Clone, Default)]
@@ -332,6 +330,17 @@ impl<'a> Visit<'a> for ImportCollector {
             return;
         }
 
+        let mut recorded_sources = BTreeSet::new();
+        for dynamic_usage in self.extract_generic_loader_usages_current(expression) {
+            if recorded_sources.insert(dynamic_usage.source.clone()) {
+                self.imports.push(ImportRecord {
+                    source: dynamic_usage.source,
+                    kind: ImportKind::Dynamic,
+                    specifiers: Vec::new(),
+                });
+            }
+        }
+
         walk::walk_call_expression(self, expression);
     }
 
@@ -341,11 +350,7 @@ impl<'a> Visit<'a> for ImportCollector {
         if let Some(initializer) = declarator.init.as_ref() {
             if let Some(binding_kind) = self.classify_dynamic_alias_expression_current(initializer)
             {
-                self.register_runtime_dynamic_alias(
-                    declarator.kind,
-                    &declarator.id,
-                    binding_kind,
-                );
+                self.register_runtime_dynamic_alias(declarator.kind, &declarator.id, binding_kind);
             }
 
             if let Some(local_name) = binding_pattern_name(&declarator.id) {
@@ -358,22 +363,19 @@ impl<'a> Visit<'a> for ImportCollector {
                 }
 
                 let direct_loader_binding = match initializer.without_parentheses() {
-                    Expression::ArrowFunctionExpression(_)
-                    | Expression::FunctionExpression(_) => {
+                    Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
                         self.extract_loader_expression_usage_current(initializer)
                     }
                     _ => None,
                 };
-                let tracked_import =
-                    direct_loader_binding.clone().or_else(|| {
-                        let Expression::Identifier(identifier) =
-                            initializer.without_parentheses()
-                        else {
-                            return None;
-                        };
+                let tracked_import = direct_loader_binding.clone().or_else(|| {
+                    let Expression::Identifier(identifier) = initializer.without_parentheses()
+                    else {
+                        return None;
+                    };
 
-                        self.resolve_loader_binding(identifier.name.as_str())
-                    });
+                    self.resolve_loader_binding(identifier.name.as_str())
+                });
 
                 if let Some(tracked_import) = tracked_import {
                     self.register_runtime_loader_binding(
@@ -387,10 +389,9 @@ impl<'a> Visit<'a> for ImportCollector {
             }
         }
 
-        if let Some(source) = extract_require_source(
-            declarator.init.as_ref(),
-            self.is_builtin_require_shadowed(),
-        ) {
+        if let Some(source) =
+            extract_require_source(declarator.init.as_ref(), self.is_builtin_require_shadowed())
+        {
             self.register_runtime_require_dynamic_bindings(
                 declarator.kind,
                 &declarator.id,
@@ -424,10 +425,9 @@ impl<'a> Visit<'a> for ImportCollector {
     }
 
     fn visit_assignment_expression(&mut self, expression: &AssignmentExpression<'a>) {
-        if let Some(source) = extract_require_source(
-            Some(&expression.right),
-            self.is_builtin_require_shadowed(),
-        ) {
+        if let Some(source) =
+            extract_require_source(Some(&expression.right), self.is_builtin_require_shadowed())
+        {
             self.imports.push(ImportRecord {
                 source,
                 kind: ImportKind::Require,
@@ -728,7 +728,11 @@ impl ImportCollector {
         call: &CallExpression<'_>,
     ) -> Option<TrackedDynamicImport> {
         let callee = call.callee.without_parentheses();
-        let callback = call.arguments.first()?.as_expression()?.without_parentheses();
+        let callback = call
+            .arguments
+            .first()?
+            .as_expression()?
+            .without_parentheses();
 
         if self.is_react_lazy_callee_current(callee) {
             return self.extract_loader_callback_usage_current(callback);
@@ -739,6 +743,33 @@ impl ImportCollector {
         }
 
         None
+    }
+
+    fn extract_generic_loader_usages_current(
+        &self,
+        call: &CallExpression<'_>,
+    ) -> Vec<TrackedDynamicImport> {
+        let mut usages = Vec::new();
+
+        if let Expression::Identifier(identifier) = call.callee.without_parentheses() {
+            if let Some(usage) = self.resolve_loader_binding(identifier.name.as_str()) {
+                usages.push(usage);
+            }
+        }
+
+        for argument in &call.arguments {
+            let Some(argument) = argument.as_expression() else {
+                continue;
+            };
+            let Expression::Identifier(identifier) = argument.without_parentheses() else {
+                continue;
+            };
+            if let Some(usage) = self.resolve_loader_binding(identifier.name.as_str()) {
+                usages.push(usage);
+            }
+        }
+
+        usages
     }
 
     fn walk_dynamic_wrapper_call(
@@ -930,10 +961,7 @@ impl ImportCollector {
         self.then_callback_scope_stack[target_index].insert(local_name, usage);
     }
 
-    fn register_hoisted_loader_declarations(
-        &mut self,
-        statements: &[Statement<'_>],
-    ) {
+    fn register_hoisted_loader_declarations(&mut self, statements: &[Statement<'_>]) {
         for statement in statements {
             let Statement::FunctionDeclaration(function) = statement else {
                 continue;
@@ -1082,10 +1110,9 @@ impl<'a> Visit<'a> for DynamicBindingCollector {
     }
 
     fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
-        if let Some(source) = extract_require_source(
-            declarator.init.as_ref(),
-            self.is_builtin_require_shadowed(),
-        ) {
+        if let Some(source) =
+            extract_require_source(declarator.init.as_ref(), self.is_builtin_require_shadowed())
+        {
             collect_require_dynamic_bindings(&mut self.bindings, &declarator.id, &source);
         }
 
@@ -1356,9 +1383,10 @@ impl<'a> Visit<'a> for ScopedLoaderBindingCollector {
     }
 
     fn visit_variable_declarator(&mut self, declarator: &VariableDeclarator<'a>) {
-        if let (Some(local_name), Some(initializer)) =
-            (binding_pattern_name(&declarator.id), declarator.init.as_ref())
-        {
+        if let (Some(local_name), Some(initializer)) = (
+            binding_pattern_name(&declarator.id),
+            declarator.init.as_ref(),
+        ) {
             let tracked_import = extract_loader_binding_usage(initializer).or_else(|| {
                 let Expression::Identifier(identifier) = initializer.without_parentheses() else {
                     return None;
@@ -1419,13 +1447,8 @@ impl<'a> Visit<'a> for ScopedThenCallbackCollector {
             FunctionType::FunctionDeclaration | FunctionType::TSDeclareFunction
         ) {
             if let (Some(id), Some(body)) = (&function.id, function.body.as_ref()) {
-                if let Some(usage) =
-                    extract_then_callback_function_usage(&function.params, body)
-                {
-                    self.register_in_nearest_var_scope(
-                        id.name.as_str().to_string(),
-                        usage,
-                    );
+                if let Some(usage) = extract_then_callback_function_usage(&function.params, body) {
+                    self.register_in_nearest_var_scope(id.name.as_str().to_string(), usage);
                 }
             }
         }
@@ -1834,24 +1857,18 @@ fn is_react_lazy_callee(
     match expression {
         Expression::StaticMemberExpression(member) => {
             member.property.name.as_str() == "lazy"
-                && is_react_wrapper_object(
-                    &member.object,
-                    bindings,
-                    active_bindings,
-                    shadowed,
-                )
+                && is_react_wrapper_object(&member.object, bindings, active_bindings, shadowed)
         }
         Expression::Identifier(identifier) => {
             binding_name_matches(
                 identifier.name.as_str(),
                 &bindings.react_lazy_functions,
                 &active_bindings.react_lazy_functions,
+            ) && !is_shadowed(
+                identifier.name.as_str(),
+                shadowed,
+                &active_bindings.react_lazy_functions,
             )
-                && !is_shadowed(
-                    identifier.name.as_str(),
-                    shadowed,
-                    &active_bindings.react_lazy_functions,
-                )
         }
         _ => false,
     }
@@ -2143,9 +2160,7 @@ fn extract_then_callback_alias_entries(
 
         let imported = property_key_to_string(&property.key)?;
         let local = match &property.value {
-            BindingPattern::BindingIdentifier(identifier) => {
-                identifier.name.as_str().to_string()
-            }
+            BindingPattern::BindingIdentifier(identifier) => identifier.name.as_str().to_string(),
             BindingPattern::AssignmentPattern(pattern) => pattern
                 .left
                 .get_binding_identifier()
@@ -2183,11 +2198,9 @@ fn extract_then_callback_binding(
     }
 
     match &params.items[0].pattern {
-        BindingPattern::BindingIdentifier(identifier) => {
-            Some(ThenCallbackBinding::Namespace(
-                identifier.name.as_str().to_string(),
-            ))
-        }
+        BindingPattern::BindingIdentifier(identifier) => Some(ThenCallbackBinding::Namespace(
+            identifier.name.as_str().to_string(),
+        )),
         BindingPattern::ObjectPattern(pattern) => {
             if pattern.rest.is_some() {
                 return None;

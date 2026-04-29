@@ -242,6 +242,91 @@ export const helper = 1;
 }
 
 #[test]
+fn analyze_project_excludes_pure_reexport_barrels_from_deletion_candidates() {
+    let project = TestProject::new("pure-reexport-barrel");
+    project.write(
+        "src/widgets/ui/index.ts",
+        r#"
+// public widget barrel
+export { default as CycleTimeChart } from "./CycleTimeChart";
+export * from "./chartTypes";
+"#,
+    );
+    project.write(
+        "src/widgets/ui/CycleTimeChart.tsx",
+        "export default function CycleTimeChart() { return null; }\n",
+    );
+    project.write(
+        "src/widgets/ui/chartTypes.ts",
+        "export type ChartId = string;\n",
+    );
+    project.write(
+        "src/widgets/ui/compact.ts",
+        r#"export{ChartMeta}from"./chartMeta";"#,
+    );
+    project.write(
+        "src/widgets/ui/chartMeta.ts",
+        "export const ChartMeta = true;\n",
+    );
+    project.write(
+        "src/widgets/ui/clientIndex.ts",
+        r#""use client";
+export { default as ClientWidget } from "./ClientWidget";
+"#,
+    );
+    project.write(
+        "src/widgets/ui/ClientWidget.tsx",
+        "export default function ClientWidget() { return null; }\n",
+    );
+    project.write(
+        "src/widgets/ui/impure.ts",
+        r#"export { default as ImpureWidget } from "./ImpureWidget";
+registerIcons();
+"#,
+    );
+    project.write(
+        "src/widgets/ui/ImpureWidget.tsx",
+        "export default function ImpureWidget() { return null; }\n",
+    );
+    project.write("src/widgets/logic.ts", "export const unusedLogic = true;\n");
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+    let barrel = project.root().join("src/widgets/ui/index.ts");
+    let compact_barrel = project.root().join("src/widgets/ui/compact.ts");
+    let client_barrel = project.root().join("src/widgets/ui/clientIndex.ts");
+    let impure_barrel = project.root().join("src/widgets/ui/impure.ts");
+    let logic = project.root().join("src/widgets/logic.ts");
+
+    for pure_barrel in [barrel, compact_barrel, client_barrel] {
+        assert!(!report
+            .findings
+            .orphan_files
+            .iter()
+            .any(|finding| finding.file == pure_barrel));
+        assert!(!report
+            .findings
+            .deletion_candidates
+            .iter()
+            .any(|finding| finding.file == pure_barrel));
+        assert!(!report
+            .findings
+            .dead_exports
+            .iter()
+            .any(|finding| finding.file == pure_barrel));
+    }
+    assert!(report
+        .findings
+        .deletion_candidates
+        .iter()
+        .any(|finding| finding.file == impure_barrel));
+    assert!(report
+        .findings
+        .deletion_candidates
+        .iter()
+        .any(|finding| finding.file == logic));
+}
+
+#[test]
 fn analyze_project_skips_next_app_framework_exports_for_route_conventions() {
     let project = TestProject::new("next-app-framework-exports");
     project.write(
