@@ -20,6 +20,10 @@ Kratos는 자동 삭제 도구라기보다 안전한 정리 흐름을 위한 분
 - Next.js `app/` / `pages/` route entrypoint 휴리스틱
 - `tsconfig.json` / `jsconfig.json`의 `baseUrl`, `paths` alias 해석
 - `package.json`의 `main`, `module`, `types`, `bin`, `exports` entrypoint 해석
+- `package.json` scripts, GitHub Actions workflow/composite action `run` 명령이 실행하는 로컬 script entrypoint 보호
+- `scripts/verify-*`, `scripts/*smoke*`, `scripts/*validation*` 형태의 수동 검증 script 보호
+- 스캔 대상 source tree 안의 `*.test.*`, `*.spec.*`, `src/__tests__/**` 테스트 파일을 삭제 후보에서 제외하고 테스트 import edge 반영
+- Next.js framework-consumed export, 인식 가능한 dynamic import wrapper, 순수 re-export barrel 보수 처리
 - 저장된 리포트 요약, JSON, Markdown 출력
 - 두 리포트 간 finding 변화 비교
 - 신뢰도 기준값을 적용한 안전 삭제 후보 미리보기
@@ -289,4 +293,4 @@ Kratos는 MIT 라이선스로 공개되는 오픈소스 프로젝트입니다.
 
 ## 주의
 
-Kratos는 보수적인 정적 분석과 휴리스틱을 함께 사용합니다. 동적 import, framework convention, 생성 파일, runtime-only entrypoint는 프로젝트마다 다르게 해석될 수 있으므로 `--apply` 전에 report와 diff를 검토하는 흐름을 권장합니다.
+Kratos는 보수적인 정적 분석과 휴리스틱을 함께 사용합니다. 현재 구현은 알려진 Next.js route export, package/workflow/action script entrypoint, 수동 검증 script, tooling config, 테스트 파일, 인식 가능한 `React.lazy`/`next/dynamic` wrapper, 순수 re-export barrel을 보호합니다. 그래도 custom runtime entrypoint, 생성 파일, 프로젝트 고유 loader는 정적 분석 밖에 있을 수 있으므로 필요하면 `entry`/suppression으로 명시하고, 남은 deletion candidate는 `--apply` 전에 report와 diff로 확인하세요.

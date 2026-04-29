@@ -20,6 +20,10 @@ Kratos is an analysis tool for a safe cleanup workflow, not an automatic deletio
 - Apply Next.js `app/` / `pages/` route entrypoint heuristics
 - Resolve `tsconfig.json` / `jsconfig.json` `baseUrl` and `paths` aliases
 - Resolve `package.json` `main`, `module`, `types`, `bin`, and `exports` entrypoints
+- Protect local script entrypoints executed by `package.json` scripts and GitHub Actions workflow/composite action `run` commands
+- Protect manual verification scripts shaped like `scripts/verify-*`, `scripts/*smoke*`, and `scripts/*validation*`
+- Exclude `*.test.*`, `*.spec.*`, and `src/__tests__/**` test files inside the scanned source tree from deletion candidates while preserving their import edges
+- Conservatively handle Next.js framework-consumed exports, recognized dynamic import wrappers, and pure re-export barrels
 - Print saved reports as summary, JSON, or Markdown
 - Compare finding changes between two reports
 - Preview safe deletion candidates with a confidence threshold
@@ -289,4 +293,4 @@ Kratos is open source under the MIT license.
 
 ## Note
 
-Kratos combines conservative static analysis with heuristics. Dynamic imports, framework conventions, generated files, and runtime-only entrypoints can vary by project, so review the report and diff before running `--apply`.
+Kratos combines conservative static analysis with heuristics. The current implementation protects known Next.js route exports, package/workflow/action script entrypoints, manual verification scripts, tooling config files, test files, recognized `React.lazy`/`next/dynamic` wrappers, and pure re-export barrels. Custom runtime entrypoints, generated files, and project-specific loaders may still sit outside static analysis, so declare them with `entry`/suppressions when needed and review the remaining deletion candidates with the report and diff before running `--apply`.

@@ -516,6 +516,296 @@ export const helperIcon = 1;
 }
 
 #[test]
+fn analyze_project_protects_orbit_dashboard_regression_surface() {
+    let project = TestProject::new("orbit-dashboard-regression");
+    project.write(
+        "package.json",
+        r#"{
+  "scripts": {
+    "generate:roster": "node scripts/generate-roster-json.mjs",
+    "sync:pr-daily": "npm run sync:pr-reviews",
+    "sync:pr-reviews": "node scripts/github-pr-reviews-daily-insert.mjs"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest"
+  }
+}
+"#,
+    );
+    project.write(
+        ".github/workflows/pr-weekly-snapshot.yml",
+        r#"
+name: PR weekly snapshot
+jobs:
+  snapshot:
+    steps:
+      - run: node scripts/github-pr-weekly-snapshot.mjs
+"#,
+    );
+    project.write(
+        ".github/actions/ai-readiness-scan/action.yml",
+        r#"
+runs:
+  using: composite
+  steps:
+    - run: node "$ACTION_PATH/../../../scripts/ai-readiness-submit.mjs"
+    - run: node ${{github.action_path}}/../../../scripts/ai-readiness-submit-expression.mjs
+    - working-directory: scripts
+      run: node "$ACTION_PATH/../../../scripts/ai-readiness-submit-working-dir.mjs"
+"#,
+    );
+    project.write("eslint.config.mjs", "export default [];\n");
+    project.write(
+        "scripts/generate-roster-json.mjs",
+        "console.log('generate roster');\n",
+    );
+    project.write(
+        "scripts/github-pr-reviews-daily-insert.mjs",
+        "console.log('daily reviews');\n",
+    );
+    project.write(
+        "scripts/github-pr-weekly-snapshot.mjs",
+        "console.log('weekly snapshot');\n",
+    );
+    project.write(
+        "scripts/ai-readiness-submit.mjs",
+        "export function submitPayload() { return true; }\n",
+    );
+    project.write(
+        "scripts/ai-readiness-submit-expression.mjs",
+        "export function submitExpressionPayload() { return true; }\n",
+    );
+    project.write(
+        "scripts/ai-readiness-submit-working-dir.mjs",
+        "export function submitWorkingDirPayload() { return true; }\n",
+    );
+    project.write(
+        "scripts/verify-beta-smoke.mjs",
+        "export function verifyBetaSmoke() { return true; }\n",
+    );
+    project.write(
+        "scripts/verify-integrated-insights-smoke.mjs",
+        "export function verifyIntegratedInsightsSmoke() { return true; }\n",
+    );
+    project.write(
+        "src/__tests__/scripts/verify-beta-smoke.test.ts",
+        r#"import { verifyBetaSmoke } from "../../../scripts/verify-beta-smoke.mjs";
+
+verifyBetaSmoke();
+"#,
+    );
+    project.write(
+        "src/shared/lib/validators.ts",
+        "export function validateEngineer() { return true; }\n",
+    );
+    project.write(
+        "src/__tests__/lib/validators.test.ts",
+        r#"import { validateEngineer } from "../../shared/lib/validators";
+
+validateEngineer();
+"#,
+    );
+    project.write(
+        "src/app/admin/data/_tabs.test.ts",
+        "export const adminTabsTest = true;\n",
+    );
+    project.write(
+        "src/app/admin/page.tsx",
+        r#"import dynamic from "next/dynamic";
+
+function loadDashboard(loader: () => Promise<unknown>) {
+  return dynamic(loader);
+}
+
+const AdminPanel = loadDashboard(() => import("../../features/admin/AdminPanel"));
+
+export const metadata = { title: "Admin" };
+export default function AdminPage() { return <AdminPanel />; }
+export const localHelper = true;
+"#,
+    );
+    project.write(
+        "src/features/admin/AdminPanel.tsx",
+        r#"export default function AdminPanel() { return null; }
+export const panelConfig = {};
+"#,
+    );
+    project.write(
+        "src/Widgets/CycleTime/ui/index.ts",
+        "export { default as CycleTimeChart } from \"./CycleTimeChart\";\n",
+    );
+    project.write(
+        "src/Widgets/CycleTime/ui/CycleTimeChart.tsx",
+        "export default function CycleTimeChart() { return null; }\n",
+    );
+    project.write(
+        "src/Widgets/CycleTime/model/stale.ts",
+        "export const staleWidgetModel = true;\n",
+    );
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+
+    let deletion_candidates = relative_finding_files(
+        project.root(),
+        report
+            .findings
+            .deletion_candidates
+            .iter()
+            .map(|finding| &finding.file),
+    );
+    let orphan_files = relative_finding_files(
+        project.root(),
+        report
+            .findings
+            .orphan_files
+            .iter()
+            .map(|finding| &finding.file),
+    );
+    let dead_exports = report
+        .findings
+        .dead_exports
+        .iter()
+        .map(|finding| {
+            (
+                to_relative_path(project.root(), &finding.file),
+                finding.export_name.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    for protected in [
+        "eslint.config.mjs",
+        "scripts/generate-roster-json.mjs",
+        "scripts/github-pr-reviews-daily-insert.mjs",
+        "scripts/github-pr-weekly-snapshot.mjs",
+        "scripts/ai-readiness-submit.mjs",
+        "scripts/ai-readiness-submit-expression.mjs",
+        "scripts/ai-readiness-submit-working-dir.mjs",
+        "scripts/verify-beta-smoke.mjs",
+        "scripts/verify-integrated-insights-smoke.mjs",
+        "src/__tests__/scripts/verify-beta-smoke.test.ts",
+        "src/shared/lib/validators.ts",
+        "src/__tests__/lib/validators.test.ts",
+        "src/app/admin/data/_tabs.test.ts",
+        "src/app/admin/page.tsx",
+        "src/features/admin/AdminPanel.tsx",
+        "src/Widgets/CycleTime/ui/index.ts",
+    ] {
+        assert!(
+            !deletion_candidates.contains(&protected.to_string()),
+            "{protected} should not be a deletion candidate"
+        );
+        assert!(
+            !orphan_files.contains(&protected.to_string()),
+            "{protected} should not be reported as an orphan file"
+        );
+    }
+
+    assert!(!dead_exports.contains(&(
+        "src/features/admin/AdminPanel.tsx".to_string(),
+        "default".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "src/features/admin/AdminPanel.tsx".to_string(),
+        "panelConfig".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "scripts/ai-readiness-submit.mjs".to_string(),
+        "submitPayload".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "scripts/ai-readiness-submit-expression.mjs".to_string(),
+        "submitExpressionPayload".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "scripts/ai-readiness-submit-working-dir.mjs".to_string(),
+        "submitWorkingDirPayload".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "scripts/verify-beta-smoke.mjs".to_string(),
+        "verifyBetaSmoke".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "scripts/verify-integrated-insights-smoke.mjs".to_string(),
+        "verifyIntegratedInsightsSmoke".to_string(),
+    )));
+    assert!(!dead_exports.contains(&(
+        "src/shared/lib/validators.ts".to_string(),
+        "validateEngineer".to_string(),
+    )));
+    assert!(!dead_exports
+        .iter()
+        .any(|(file, _)| file == "src/Widgets/CycleTime/ui/index.ts"));
+    assert!(dead_exports.contains(&(
+        "src/app/admin/page.tsx".to_string(),
+        "localHelper".to_string(),
+    )));
+    assert!(deletion_candidates.contains(&"src/Widgets/CycleTime/model/stale.ts".to_string()));
+
+    let entrypoint_kinds = report
+        .modules
+        .iter()
+        .filter_map(|module| {
+            module
+                .entrypoint_kind
+                .clone()
+                .map(|kind| (module.relative_path.clone(), kind))
+        })
+        .collect::<Vec<_>>();
+
+    for (path, kind) in [
+        (
+            "scripts/generate-roster-json.mjs",
+            EntrypointKind::PackageEntry,
+        ),
+        (
+            "scripts/github-pr-reviews-daily-insert.mjs",
+            EntrypointKind::PackageEntry,
+        ),
+        (
+            "scripts/github-pr-weekly-snapshot.mjs",
+            EntrypointKind::PackageEntry,
+        ),
+        (
+            "scripts/ai-readiness-submit.mjs",
+            EntrypointKind::PackageEntry,
+        ),
+        (
+            "scripts/ai-readiness-submit-expression.mjs",
+            EntrypointKind::PackageEntry,
+        ),
+        (
+            "scripts/ai-readiness-submit-working-dir.mjs",
+            EntrypointKind::PackageEntry,
+        ),
+        ("eslint.config.mjs", EntrypointKind::ToolingEntry),
+        (
+            "src/__tests__/scripts/verify-beta-smoke.test.ts",
+            EntrypointKind::ToolingEntry,
+        ),
+        (
+            "src/__tests__/lib/validators.test.ts",
+            EntrypointKind::ToolingEntry,
+        ),
+        (
+            "src/app/admin/data/_tabs.test.ts",
+            EntrypointKind::ToolingEntry,
+        ),
+        (
+            "scripts/verify-integrated-insights-smoke.mjs",
+            EntrypointKind::ToolingEntry,
+        ),
+        ("src/app/admin/page.tsx", EntrypointKind::NextAppRoute),
+    ] {
+        assert!(
+            entrypoint_kinds.contains(&(path.to_string(), kind.clone())),
+            "{path} should be classified as {kind:?}"
+        );
+    }
+}
+
+#[test]
 fn analyze_project_reports_missing_base_url_imports_as_broken() {
     let project = TestProject::new("missing-baseurl");
     project.write(
@@ -549,6 +839,20 @@ fn repo_root() -> PathBuf {
         .join("../..")
         .canonicalize()
         .expect("repo root should resolve")
+}
+
+fn relative_finding_files<'a>(
+    root: &Path,
+    files: impl Iterator<Item = &'a PathBuf>,
+) -> Vec<String> {
+    files.map(|file| to_relative_path(root, file)).collect()
+}
+
+fn to_relative_path(root: &Path, file: &Path) -> String {
+    file.strip_prefix(root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 struct TestProject {
