@@ -36,7 +36,6 @@ const DEFAULT_IGNORED_DIRS: &[&str] = &[
     "test",
     "tests",
     "__fixtures__",
-    "__tests__",
 ];
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -344,6 +343,11 @@ fn collect_yamlish_run_entries(
         if file_type.is_file() && include_file(&path) {
             let content = std::fs::read_to_string(&path)?;
             for command in extract_yamlish_run_commands(&content) {
+                let command_text = if is_action_file(&path) {
+                    rewrite_action_path_references(&command.command, &path)
+                } else {
+                    command.command
+                };
                 let command_root = command
                     .working_directory
                     .as_deref()
@@ -354,7 +358,7 @@ fn collect_yamlish_run_entries(
                     root,
                     &command_root,
                     package_json,
-                    &command.command,
+                    &command_text,
                     0,
                 );
             }
@@ -376,6 +380,44 @@ fn is_action_file(path: &Path) -> bool {
         path.file_name().and_then(|value| value.to_str()),
         Some("action.yml" | "action.yaml")
     )
+}
+
+fn rewrite_action_path_references(command: &str, action_file: &Path) -> String {
+    let Some(action_dir) = action_file.parent() else {
+        return command.to_string();
+    };
+    let action_path = normalize_path(action_dir.to_path_buf())
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    rewrite_github_action_path_expressions(command, &action_path)
+        .replace("${ACTION_PATH}", &action_path)
+        .replace("$ACTION_PATH", &action_path)
+}
+
+fn rewrite_github_action_path_expressions(command: &str, action_path: &str) -> String {
+    let mut output = String::new();
+    let mut rest = command;
+
+    while let Some(start) = rest.find("${{") {
+        output.push_str(&rest[..start]);
+        let expression_start = start + "${{".len();
+        let Some(end) = rest[expression_start..].find("}}") else {
+            output.push_str(&rest[start..]);
+            return output;
+        };
+        let expression_end = expression_start + end;
+        let expression = &rest[expression_start..expression_end];
+        if expression.trim() == "github.action_path" {
+            output.push_str(action_path);
+        } else {
+            output.push_str(&rest[start..expression_end + "}}".len()]);
+        }
+        rest = &rest[expression_end + "}}".len()..];
+    }
+
+    output.push_str(rest);
+    output
 }
 
 struct YamlishRunCommand {

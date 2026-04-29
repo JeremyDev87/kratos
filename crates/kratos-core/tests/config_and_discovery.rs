@@ -467,6 +467,29 @@ fn collect_source_files_honors_explicit_roots_even_when_root_name_is_ignored_by_
 }
 
 #[test]
+fn collect_source_files_keeps_src_tests_available_for_import_edges() {
+    let project = TestProject::new("src-tests-import-edges");
+    project.write(
+        "src/__tests__/scripts/verify-smoke.test.ts",
+        "import { runSmoke } from '../../../scripts/verify-smoke.mjs';\nrunSmoke();\n",
+    );
+    project.write(
+        "scripts/verify-smoke.mjs",
+        "export function runSmoke() { return true; }\n",
+    );
+
+    let config = load_project_config(project.root()).expect("config should load");
+    let discovered = collect_source_files(&config).expect("source discovery should succeed");
+
+    assert!(discovered.contains(
+        &project
+            .root()
+            .join("src/__tests__/scripts/verify-smoke.test.ts")
+    ));
+    assert!(discovered.contains(&project.root().join("scripts/verify-smoke.mjs")));
+}
+
+#[test]
 fn collect_source_files_still_respects_directory_only_ignore_patterns_inside_explicit_roots() {
     for pattern in ["tests/", "/tests/"] {
         let project_name = format!("explicit-roots-respect-patterns-{}", pattern.len());
@@ -972,6 +995,12 @@ runs:
   using: composite
   steps:
     - run: node scripts/action-entry.mjs
+    - run: node "$ACTION_PATH/../../../scripts/action-path-entry.mjs"
+    - run: node ${{github.action_path}}/../../../scripts/action-path-expression-entry.mjs
+    - working-directory: scripts
+      run: node "$ACTION_PATH/../../../scripts/action-path-working-dir-entry.mjs"
+    - working-directory: scripts
+      run: node ${{ github.action_path }}/../../../scripts/action-path-expression-working-dir-entry.mjs
 "#,
     );
     project.write(
@@ -1000,6 +1029,22 @@ runs:
     project.write("scripts/workflow-cleanup.sh", "echo workflow cleanup\n");
     project.write("scripts/local-workflow.mjs", "export const local = true;\n");
     project.write("scripts/action-entry.mjs", "export const action = true;\n");
+    project.write(
+        "scripts/action-path-entry.mjs",
+        "export const actionPath = true;\n",
+    );
+    project.write(
+        "scripts/action-path-expression-entry.mjs",
+        "export const actionPathExpression = true;\n",
+    );
+    project.write(
+        "scripts/action-path-working-dir-entry.mjs",
+        "export const actionPathWorkingDir = true;\n",
+    );
+    project.write(
+        "scripts/action-path-expression-working-dir-entry.mjs",
+        "export const actionPathExpressionWorkingDir = true;\n",
+    );
 
     let config = load_project_config(project.root()).expect("config should load");
 
@@ -1015,6 +1060,10 @@ runs:
         "scripts/workflow-cleanup.sh",
         "scripts/local-workflow.mjs",
         "scripts/action-entry.mjs",
+        "scripts/action-path-entry.mjs",
+        "scripts/action-path-expression-entry.mjs",
+        "scripts/action-path-working-dir-entry.mjs",
+        "scripts/action-path-expression-working-dir-entry.mjs",
     ] {
         assert!(
             config.package_entries.contains(&project.root().join(entry)),

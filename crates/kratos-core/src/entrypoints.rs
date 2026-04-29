@@ -63,6 +63,14 @@ pub fn detect_entrypoint_kind(
         return Ok(Some(EntrypointKind::ToolingEntry));
     }
 
+    if is_test_entry(&relative_path) {
+        return Ok(Some(EntrypointKind::ToolingEntry));
+    }
+
+    if is_manual_script_entry(&relative_path) {
+        return Ok(Some(EntrypointKind::ToolingEntry));
+    }
+
     if is_framework_entry(&relative_path) {
         return Ok(Some(EntrypointKind::FrameworkEntry));
     }
@@ -150,8 +158,8 @@ mod tests {
         assert_eq!(opengraph, Some(EntrypointKind::NextAppRoute));
         assert_eq!(package_root, Some(EntrypointKind::NextAppRoute));
         assert_eq!(nested_package, Some(EntrypointKind::NextAppRoute));
-        assert_eq!(nested_test, None);
-        assert_eq!(nested_spec, None);
+        assert_eq!(nested_test, Some(EntrypointKind::ToolingEntry));
+        assert_eq!(nested_spec, Some(EntrypointKind::ToolingEntry));
     }
 
     #[test]
@@ -208,15 +216,61 @@ mod tests {
             .expect("entrypoint detection should succeed");
         let eslint_config = detect_entrypoint_kind(&root.join("eslint.config.mjs"), &config)
             .expect("entrypoint detection should succeed");
-        let test_config = detect_entrypoint_kind(&root.join("next.config.test.ts"), &config)
-            .expect("entrypoint detection should succeed");
+        let extra_dotted_config =
+            detect_entrypoint_kind(&root.join("next.config.local.ts"), &config)
+                .expect("entrypoint detection should succeed");
         let backup_config = detect_entrypoint_kind(&root.join("vite.config.backup.js"), &config)
             .expect("entrypoint detection should succeed");
 
         assert_eq!(real_config, Some(EntrypointKind::ToolingEntry));
         assert_eq!(eslint_config, Some(EntrypointKind::ToolingEntry));
-        assert_eq!(test_config, None);
+        assert_eq!(extra_dotted_config, None);
         assert_eq!(backup_config, None);
+    }
+
+    #[test]
+    fn test_entry_supports_common_file_patterns() {
+        let root = PathBuf::from("/tmp/kratos-entrypoints");
+        let config = ProjectConfig::new(root.clone());
+
+        for path in [
+            "src/app/admin/data/_tabs.test.ts",
+            "src/components/Card.spec.tsx",
+            "src/__tests__/lib/validators.test.ts",
+        ] {
+            let detected = detect_entrypoint_kind(&root.join(path), &config)
+                .expect("entrypoint detection should succeed");
+            assert_eq!(
+                detected,
+                Some(EntrypointKind::ToolingEntry),
+                "{path} should be protected as a test entrypoint"
+            );
+        }
+    }
+
+    #[test]
+    fn manual_script_entry_supports_verify_smoke_and_validation_scripts() {
+        let root = PathBuf::from("/tmp/kratos-entrypoints");
+        let config = ProjectConfig::new(root.clone());
+
+        for path in [
+            "scripts/verify-beta-smoke.mjs",
+            "scripts/verify-integrated-insights-smoke.mjs",
+            "scripts/run-validation.ts",
+        ] {
+            let detected = detect_entrypoint_kind(&root.join(path), &config)
+                .expect("entrypoint detection should succeed");
+            assert_eq!(
+                detected,
+                Some(EntrypointKind::ToolingEntry),
+                "{path} should be protected as a manual verification entrypoint"
+            );
+        }
+
+        let ordinary_script =
+            detect_entrypoint_kind(&root.join("scripts/unused-helper.mjs"), &config)
+                .expect("entrypoint detection should succeed");
+        assert_eq!(ordinary_script, None);
     }
 }
 
@@ -262,6 +316,62 @@ fn is_tooling_entry(relative_path: &str) -> bool {
             .strip_prefix(&format!("{tool}.config."))
             .is_some_and(|extension| !extension.is_empty() && !extension.contains('.'))
     })
+}
+
+fn is_test_entry(relative_path: &str) -> bool {
+    let normalized_path = relative_path.replace('\\', "/").to_ascii_lowercase();
+    let file_name = normalized_path
+        .rsplit('/')
+        .next()
+        .unwrap_or(normalized_path.as_str());
+
+    normalized_path
+        .split('/')
+        .any(|segment| segment == "__tests__")
+        || TEST_FILE_SUFFIXES
+            .iter()
+            .any(|suffix| file_name.ends_with(suffix))
+}
+
+const TEST_FILE_SUFFIXES: &[&str] = &[
+    ".test.js",
+    ".test.jsx",
+    ".test.ts",
+    ".test.tsx",
+    ".test.mjs",
+    ".test.mts",
+    ".test.cjs",
+    ".test.cts",
+    ".spec.js",
+    ".spec.jsx",
+    ".spec.ts",
+    ".spec.tsx",
+    ".spec.mjs",
+    ".spec.mts",
+    ".spec.cjs",
+    ".spec.cts",
+];
+
+fn is_manual_script_entry(relative_path: &str) -> bool {
+    let normalized_path = relative_path.replace('\\', "/").to_ascii_lowercase();
+    let Some(file_name) = normalized_path.rsplit('/').next() else {
+        return false;
+    };
+
+    normalized_path.starts_with("scripts/")
+        && has_script_extension(file_name)
+        && (file_name.starts_with("verify-")
+            || file_name.contains("smoke")
+            || file_name.contains("validation"))
+}
+
+fn has_script_extension(file_name: &str) -> bool {
+    matches!(
+        Path::new(file_name)
+            .extension()
+            .and_then(|value| value.to_str()),
+        Some("js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts" | "sh")
+    )
 }
 
 fn has_supported_segment(segments: &[&str], name: &str) -> bool {
