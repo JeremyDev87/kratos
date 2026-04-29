@@ -13,6 +13,7 @@ pub struct ParsedModule {
     pub imports: Vec<ImportRecord>,
     pub exports: Vec<ExportRecord>,
     pub unused_imports: Vec<UnusedImportRecord>,
+    pub is_pure_reexport_barrel: bool,
 }
 
 pub fn parse_module_source(path: &Path, source: &str) -> KratosResult<ParsedModule> {

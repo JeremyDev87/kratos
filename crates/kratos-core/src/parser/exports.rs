@@ -1,7 +1,7 @@
 use oxc_ast::ast::{
     AssignmentExpression, AssignmentTarget, ComputedMemberExpression, Declaration,
     ExportAllDeclaration, ExportDefaultDeclaration, ExportNamedDeclaration, Expression,
-    ModuleExportName, Program, PropertyKey, PropertyKind, StaticMemberExpression,
+    ModuleExportName, Program, PropertyKey, PropertyKind, Statement, StaticMemberExpression,
     TSExportAssignment, TSNamespaceExportDeclaration,
 };
 use oxc_ast_visit::{walk, Visit};
@@ -14,6 +14,26 @@ pub fn collect_exports(program: &Program<'_>) -> KratosResult<Vec<ExportRecord>>
     let mut collector = ExportCollector::default();
     collector.visit_program(program);
     Ok(collector.exports)
+}
+
+pub fn is_pure_reexport_barrel(program: &Program<'_>) -> bool {
+    let mut has_reexport = false;
+
+    for statement in &program.body {
+        match statement {
+            Statement::ExportNamedDeclaration(declaration)
+                if declaration.source.is_some() && declaration.declaration.is_none() =>
+            {
+                has_reexport = true;
+            }
+            Statement::ExportAllDeclaration(_) => {
+                has_reexport = true;
+            }
+            _ => return false,
+        }
+    }
+
+    has_reexport
 }
 
 pub fn make_default_export() -> ExportRecord {
