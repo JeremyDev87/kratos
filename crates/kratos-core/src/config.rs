@@ -65,6 +65,8 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
         .map(|value| resolve_path(&root, value));
     let config_path = resolve_config_path(&root, DEFAULT_CONFIG_FILENAME);
 
+    let package_entries = collect_project_entry_files(&root, &package_json)?;
+
     Ok(ProjectConfig {
         root: root.clone(),
         config_path: config_path.exists().then_some(config_path),
@@ -76,7 +78,7 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
             extract_required_string_array(user_config.get("ignorePatterns"), "ignorePatterns")?,
         )?,
         explicit_entries: normalize_entry_paths(&root, user_config.get("entry"))?,
-        package_entries: collect_package_entry_files(&root, &package_json),
+        package_entries,
         path_aliases: normalize_path_aliases(
             &root,
             compiler_options.and_then(|value| value.get("paths")),
@@ -122,10 +124,7 @@ fn read_loose_json_file(file_path: &Path) -> KratosResult<Option<JsonValue>> {
     Ok(Some(parse_loose_json(&content)?))
 }
 
-fn normalize_ignore_patterns(
-    root: &Path,
-    user_patterns: Vec<String>,
-) -> KratosResult<Vec<String>> {
+fn normalize_ignore_patterns(root: &Path, user_patterns: Vec<String>) -> KratosResult<Vec<String>> {
     let mut patterns = read_gitignore_patterns(&resolve_config_path(root, GITIGNORE_FILENAME))?;
     patterns.extend(user_patterns);
     Ok(patterns)
@@ -137,7 +136,10 @@ fn read_gitignore_patterns(file_path: &Path) -> KratosResult<Vec<String>> {
     }
 
     let content = std::fs::read_to_string(file_path)?;
-    Ok(content.lines().filter_map(normalize_gitignore_line).collect())
+    Ok(content
+        .lines()
+        .filter_map(normalize_gitignore_line)
+        .collect())
 }
 
 fn normalize_gitignore_line(line: &str) -> Option<String> {
@@ -252,7 +254,10 @@ fn normalize_path_aliases(
     Ok(aliases)
 }
 
-fn collect_package_entry_files(root: &Path, package_json: &JsonValue) -> Vec<PathBuf> {
+fn collect_project_entry_files(
+    root: &Path,
+    package_json: &JsonValue,
+) -> KratosResult<Vec<PathBuf>> {
     let mut entries = Vec::new();
 
     add_entry_value(&mut entries, root, package_json.get("main"), false);
@@ -273,7 +278,489 @@ fn collect_package_entry_files(root: &Path, package_json: &JsonValue) -> Vec<Pat
         collect_exports(&mut entries, root, exports, false);
     }
 
-    entries
+    collect_package_script_entry_files(&mut entries, root, package_json, 0);
+    collect_workflow_run_entry_files(&mut entries, root, package_json)?;
+
+    Ok(entries)
+}
+
+fn collect_package_script_entry_files(
+    entries: &mut Vec<PathBuf>,
+    root: &Path,
+    package_json: &JsonValue,
+    depth: usize,
+) {
+    let Some(scripts) = package_json.get("scripts").and_then(JsonValue::as_object) else {
+        return;
+    };
+
+    for script in scripts.values().filter_map(JsonValue::as_str) {
+        collect_command_entry_files(entries, root, root, package_json, script, depth);
+    }
+}
+
+fn collect_workflow_run_entry_files(
+    entries: &mut Vec<PathBuf>,
+    root: &Path,
+    package_json: &JsonValue,
+) -> KratosResult<()> {
+    collect_yamlish_run_entries(
+        entries,
+        root,
+        package_json,
+        &root.join(".github/workflows"),
+        is_workflow_file,
+    )?;
+    collect_yamlish_run_entries(
+        entries,
+        root,
+        package_json,
+        &root.join(".github/actions"),
+        is_action_file,
+    )
+}
+
+fn collect_yamlish_run_entries(
+    entries: &mut Vec<PathBuf>,
+    root: &Path,
+    package_json: &JsonValue,
+    directory: &Path,
+    include_file: fn(&Path) -> bool,
+) -> KratosResult<()> {
+    if !directory.is_dir() {
+        return Ok(());
+    }
+
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
+
+        if file_type.is_dir() {
+            collect_yamlish_run_entries(entries, root, package_json, &path, include_file)?;
+            continue;
+        }
+
+        if file_type.is_file() && include_file(&path) {
+            let content = std::fs::read_to_string(&path)?;
+            for command in extract_yamlish_run_commands(&content) {
+                let command_root = command
+                    .working_directory
+                    .as_deref()
+                    .map(|directory| resolve_path(root, directory))
+                    .unwrap_or_else(|| root.to_path_buf());
+                collect_command_entry_files(
+                    entries,
+                    root,
+                    &command_root,
+                    package_json,
+                    &command.command,
+                    0,
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_workflow_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|value| value.to_str()),
+        Some("yml" | "yaml")
+    )
+}
+
+fn is_action_file(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|value| value.to_str()),
+        Some("action.yml" | "action.yaml")
+    )
+}
+
+struct YamlishRunCommand {
+    command: String,
+    working_directory: Option<String>,
+}
+
+fn extract_yamlish_run_commands(content: &str) -> Vec<YamlishRunCommand> {
+    let lines = content.lines().collect::<Vec<_>>();
+    let mut commands = Vec::new();
+    let mut index = 0;
+
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        let run_index = index;
+        let Some(raw) = trimmed
+            .strip_prefix("run:")
+            .or_else(|| trimmed.strip_prefix("- run:"))
+        else {
+            index += 1;
+            continue;
+        };
+
+        let raw = raw.trim_start();
+        if raw.starts_with('|') || raw.starts_with('>') {
+            let mut block = String::new();
+            index += 1;
+            while index < lines.len() {
+                let next = lines[index];
+                if !next.trim().is_empty() && leading_spaces(next) <= indent {
+                    break;
+                }
+                block.push_str(next.trim());
+                block.push('\n');
+                index += 1;
+            }
+            commands.push(YamlishRunCommand {
+                command: block,
+                working_directory: find_yamlish_working_directory(&lines, run_index, indent),
+            });
+            continue;
+        }
+
+        commands.push(YamlishRunCommand {
+            command: unquote_yaml_scalar(raw).to_string(),
+            working_directory: find_yamlish_working_directory(&lines, run_index, indent),
+        });
+        index += 1;
+    }
+
+    commands
+}
+
+fn find_yamlish_working_directory(
+    lines: &[&str],
+    run_index: usize,
+    run_indent: usize,
+) -> Option<String> {
+    let mut start = run_index;
+    while start > 0 {
+        let previous = lines[start - 1];
+        let previous_indent = leading_spaces(previous);
+        let previous_trimmed = previous.trim_start();
+        if previous_indent < run_indent || previous_trimmed.starts_with("- ") {
+            if previous_trimmed.starts_with("- ") {
+                start -= 1;
+            }
+            break;
+        }
+        start -= 1;
+    }
+
+    let mut end = run_index + 1;
+    while end < lines.len() {
+        let next = lines[end];
+        let next_indent = leading_spaces(next);
+        let next_trimmed = next.trim_start();
+        if next_indent < run_indent || (next_indent == run_indent && next_trimmed.starts_with("- "))
+        {
+            break;
+        }
+        end += 1;
+    }
+
+    lines[start..end]
+        .iter()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            trimmed
+                .strip_prefix("working-directory:")
+                .or_else(|| trimmed.strip_prefix("- working-directory:"))
+                .map(str::trim)
+        })
+        .next()
+        .map(unquote_yaml_scalar)
+        .map(str::to_string)
+}
+
+fn leading_spaces(value: &str) -> usize {
+    value.len() - value.trim_start().len()
+}
+
+fn unquote_yaml_scalar(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .or_else(|| {
+            value
+                .strip_prefix('\'')
+                .and_then(|inner| inner.strip_suffix('\''))
+        })
+        .unwrap_or(value)
+}
+
+fn collect_command_entry_files(
+    entries: &mut Vec<PathBuf>,
+    project_root: &Path,
+    command_root: &Path,
+    package_json: &JsonValue,
+    command: &str,
+    depth: usize,
+) {
+    if depth > 4 {
+        return;
+    }
+
+    let tokens = shellish_tokens(command);
+    for (index, token) in tokens.iter().enumerate() {
+        if is_script_runner(token) {
+            if let Some(script_name) = package_script_name_after_runner(&tokens, index) {
+                if let Some(script) = package_script(package_json, script_name) {
+                    collect_command_entry_files(
+                        entries,
+                        project_root,
+                        project_root,
+                        package_json,
+                        script,
+                        depth + 1,
+                    );
+                }
+            }
+            continue;
+        }
+
+        if is_script_interpreter(token) {
+            collect_interpreter_entry_paths(entries, command_root, &tokens, index);
+            continue;
+        }
+
+        if looks_like_local_script_path(token) {
+            add_script_entry_path(entries, command_root, token);
+        }
+    }
+}
+
+fn shellish_tokens(command: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+
+    for character in command.chars() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+
+        if let Some(active_quote) = quote {
+            if character == active_quote {
+                quote = None;
+            } else {
+                current.push(character);
+            }
+            continue;
+        }
+
+        match character {
+            '\'' | '"' => quote = Some(character),
+            '\n' | '\r' | '\t' | ' ' | '&' | '|' | ';' | '(' | ')' => {
+                push_token(&mut tokens, &mut current);
+            }
+            '#' if current.is_empty() => {
+                push_token(&mut tokens, &mut current);
+            }
+            _ => current.push(character),
+        }
+    }
+
+    push_token(&mut tokens, &mut current);
+    tokens
+}
+
+fn push_token(tokens: &mut Vec<String>, current: &mut String) {
+    if !current.is_empty() {
+        tokens.push(std::mem::take(current));
+    }
+}
+
+fn is_script_runner(token: &str) -> bool {
+    matches!(
+        command_name(token),
+        "npm" | "pnpm" | "yarn" | "bun" | "corepack"
+    )
+}
+
+fn package_script_name_after_runner<'a>(tokens: &'a [String], index: usize) -> Option<&'a str> {
+    let runner = command_name(tokens.get(index)?);
+    let mut cursor = index + 1;
+
+    if runner == "corepack" {
+        cursor += 1;
+    }
+
+    if matches!(runner, "npm" | "pnpm" | "bun" | "corepack") {
+        if matches!(
+            tokens.get(cursor).map(|value| value.as_str()),
+            Some("run" | "run-script")
+        ) {
+            cursor += 1;
+        } else {
+            return None;
+        }
+    } else if matches!(tokens.get(cursor).map(|value| value.as_str()), Some("run")) {
+        cursor += 1;
+    }
+
+    while tokens
+        .get(cursor)
+        .is_some_and(|token| token.starts_with('-'))
+    {
+        cursor += 1;
+    }
+
+    tokens.get(cursor).map(String::as_str)
+}
+
+fn package_script<'a>(package_json: &'a JsonValue, name: &str) -> Option<&'a str> {
+    package_json
+        .get("scripts")
+        .and_then(JsonValue::as_object)?
+        .get(name)?
+        .as_str()
+}
+
+fn is_script_interpreter(token: &str) -> bool {
+    matches!(
+        command_name(token),
+        "node" | "tsx" | "ts-node" | "ts-node-esm" | "bash" | "sh" | "zsh"
+    )
+}
+
+fn collect_interpreter_entry_paths(
+    entries: &mut Vec<PathBuf>,
+    command_root: &Path,
+    tokens: &[String],
+    index: usize,
+) {
+    let mut cursor = index + 1;
+
+    while let Some(token) = tokens.get(cursor) {
+        if is_eval_like_option(token) {
+            return;
+        }
+
+        if option_takes_value(token) {
+            if let Some(value) = inline_option_value(token) {
+                if looks_like_interpreter_script_path(value) {
+                    add_script_entry_path(entries, command_root, value);
+                }
+                cursor += 1;
+            } else {
+                if let Some(value) = tokens.get(cursor + 1) {
+                    if looks_like_interpreter_script_path(value) {
+                        add_script_entry_path(entries, command_root, value);
+                    }
+                }
+                cursor += 2;
+            }
+            continue;
+        }
+
+        if token.starts_with('-') || token.contains('=') && !looks_like_local_script_path(token) {
+            cursor += 1;
+            continue;
+        }
+
+        if looks_like_interpreter_script_path(token) {
+            add_script_entry_path(entries, command_root, token);
+        }
+        return;
+    }
+}
+
+fn is_eval_like_option(token: &str) -> bool {
+    matches!(
+        token,
+        "-e" | "--eval" | "-p" | "--print" | "-c" | "--command"
+    )
+}
+
+fn option_takes_value(token: &str) -> bool {
+    let name = token.split_once('=').map(|(name, _)| name).unwrap_or(token);
+    matches!(
+        name,
+        "-r" | "--require" | "--import" | "--loader" | "--env-file" | "--project" | "--tsconfig"
+    )
+}
+
+fn inline_option_value(token: &str) -> Option<&str> {
+    if let Some((_, value)) = token.split_once('=') {
+        return Some(value);
+    }
+
+    if token.starts_with("-r") && token.len() > 2 {
+        return Some(&token[2..]);
+    }
+
+    None
+}
+
+fn add_script_entry_path(entries: &mut Vec<PathBuf>, root: &Path, value: &str) {
+    let value = value.trim_matches(|character| matches!(character, '"' | '\'' | '`'));
+    let resolved =
+        resolve_package_entry_path(root, value, false).unwrap_or_else(|| resolve_path(root, value));
+    push_unique_path(entries, resolved);
+}
+
+fn looks_like_local_script_path(token: &str) -> bool {
+    if token.starts_with('-')
+        || token.starts_with('$')
+        || token.starts_with("http://")
+        || token.starts_with("https://")
+        || token.contains('=')
+    {
+        return false;
+    }
+
+    let path = Path::new(token);
+    let Some(extension) = path.extension().and_then(|value| value.to_str()) else {
+        return false;
+    };
+
+    let has_local_shape = token.starts_with('.')
+        || token.starts_with('/')
+        || token.contains('/')
+        || token.contains('\\');
+    has_local_shape
+        && matches!(
+            extension,
+            "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts" | "sh"
+        )
+}
+
+fn looks_like_interpreter_script_path(token: &str) -> bool {
+    if looks_like_local_script_path(token) {
+        return true;
+    }
+
+    if token.starts_with('-')
+        || token.starts_with('$')
+        || token.starts_with("http://")
+        || token.starts_with("https://")
+        || token.contains('=')
+    {
+        return false;
+    }
+
+    matches!(
+        Path::new(token)
+            .extension()
+            .and_then(|value| value.to_str()),
+        Some("js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts" | "sh")
+    )
+}
+
+fn command_name(token: &str) -> &str {
+    token.rsplit(['/', '\\']).next().unwrap_or(token)
 }
 
 fn collect_external_packages(package_json: &JsonValue) -> BTreeSet<String> {
