@@ -52,6 +52,7 @@ fn load_project_config_parses_comments_and_collects_entries() {
         r#"{
   "ignore": ["custom-cache",],
   "ignorePatterns": ["src/generated/**", "!src/generated/keep.ts"],
+  "keepPatterns": ["scripts/manual-*.mjs"],
   "entry": ["src/main.ts", "./src/./main.ts"],
   "roots": ["src", "missing",],
 }
@@ -79,6 +80,10 @@ fn load_project_config_parses_comments_and_collects_entries() {
             "src/generated/**".to_string(),
             "!src/generated/keep.ts".to_string()
         ]
+    );
+    assert_eq!(
+        config.keep_patterns,
+        vec!["scripts/manual-*.mjs".to_string()]
     );
     assert_eq!(
         config.explicit_entries,
@@ -1423,6 +1428,22 @@ fn load_project_config_rejects_non_string_array_items() {
         error
             .to_string()
             .contains("entry must contain only string values"),
+        "unexpected error: {error}"
+    );
+
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "keepPatterns": [null]
+}
+"#,
+    );
+
+    let error = load_project_config(project.root()).expect_err("invalid keepPatterns should fail");
+    assert!(
+        error
+            .to_string()
+            .contains("keepPatterns must contain only string values"),
         "unexpected error: {error}"
     );
 

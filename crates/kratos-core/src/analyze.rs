@@ -7,6 +7,7 @@ use crate::config::load_project_config;
 use crate::discover::collect_source_files;
 use crate::entrypoints::detect_entrypoint_kind;
 use crate::error::KratosResult;
+use crate::ignore::IgnoreMatcher;
 use crate::model::{
     BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportRecord,
     FindingSet, ImportKind, ImportSpecifierKind, ImportUsageRecord, ModuleRecord,
@@ -66,6 +67,7 @@ pub fn analyze_project(root: &Path) -> KratosResult<ReportV2> {
 
 pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
     let files = collect_source_files(config)?;
+    let keep_matcher = IgnoreMatcher::new(&[], &config.keep_patterns);
     let mut modules = BTreeMap::new();
     let mut pure_barrel_files = BTreeSet::new();
 
@@ -197,7 +199,11 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
 
         let is_pure_barrel = pure_barrel_files.contains(&module.file_path);
 
-        if module.imported_by.is_empty() && module.entrypoint_kind.is_none() && !is_pure_barrel {
+        if module.imported_by.is_empty()
+            && module.entrypoint_kind.is_none()
+            && !is_pure_barrel
+            && !is_kept_by_pattern(&keep_matcher, &module.relative_path)
+        {
             let classification = classify_orphan(&module.relative_path);
 
             orphan_files.push(OrphanFileFinding {
@@ -283,6 +289,10 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         })
         .collect();
     Ok(report)
+}
+
+fn is_kept_by_pattern(keep_matcher: &IgnoreMatcher, relative_path: &str) -> bool {
+    keep_matcher.is_ignored(relative_path, false)
 }
 
 fn dedupe_exports(exports: Vec<ExportRecord>) -> Vec<ExportRecord> {

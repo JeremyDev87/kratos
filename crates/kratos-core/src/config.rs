@@ -76,6 +76,10 @@ pub fn load_project_config(root: impl Into<PathBuf>) -> KratosResult<ProjectConf
             &root,
             extract_required_string_array(user_config.get("ignorePatterns"), "ignorePatterns")?,
         )?,
+        keep_patterns: extract_required_string_array(
+            user_config.get("keepPatterns"),
+            "keepPatterns",
+        )?,
         explicit_entries: normalize_entry_paths(&root, user_config.get("entry"))?,
         package_entries,
         path_aliases: normalize_path_aliases(

@@ -199,6 +199,7 @@ Totals: introduced 0, resolved 0, persisted 9
 {
   "ignore": ["storybook-static", "generated"],
   "ignorePatterns": ["src/generated/**", "!src/generated/keep.ts"],
+  "keepPatterns": ["scripts/manual-*.mjs"],
   "entry": ["src/bootstrap.ts"],
   "roots": ["src", "app", "pages"],
   "thresholds": {
@@ -224,6 +225,7 @@ Totals: introduced 0, resolved 0, persisted 9
 - `ignore`: 기본 ignore 목록에 추가할 디렉터리 이름입니다.
 - `ignorePatterns`: `.gitignore` 스타일 경로 패턴입니다. `!`로 예외를 둘 수 있습니다.
 - Kratos는 기본 ignore 디렉터리 이후 프로젝트 root의 `.gitignore`를 자동으로 읽고, 그 다음 `ignorePatterns`를 적용해 예외/override를 줄 수 있습니다.
+- `keepPatterns`: `.gitignore` 스타일 경로 패턴입니다. 매칭된 파일은 스캔에서 제외하지 않고 orphan/deletion candidate에서만 보호합니다.
 - `entry`: entrypoint로 강제 지정할 프로젝트 root 기준 상대 파일 경로입니다.
 - `roots`: 스캔 범위를 제한할 프로젝트 root 기준 상대 디렉터리입니다.
 - `thresholds.cleanMinConfidence`: `clean`의 기본 신뢰도 기준값입니다.
@@ -293,4 +295,4 @@ Kratos는 MIT 라이선스로 공개되는 오픈소스 프로젝트입니다.
 
 ## 주의
 
-Kratos는 보수적인 정적 분석과 휴리스틱을 함께 사용합니다. 현재 구현은 알려진 Next.js route export, package/workflow/action script entrypoint, 수동 검증 script, tooling config, 테스트 파일, 인식 가능한 `React.lazy`/`next/dynamic` wrapper, 순수 re-export barrel을 보호합니다. 그래도 custom runtime entrypoint, 생성 파일, 프로젝트 고유 loader는 정적 분석 밖에 있을 수 있으므로 필요하면 `entry`/suppression으로 명시하고, 남은 deletion candidate는 `--apply` 전에 report와 diff로 확인하세요.
+Kratos는 보수적인 정적 분석과 휴리스틱을 함께 사용합니다. 현재 구현은 알려진 Next.js route export, package/workflow/action script entrypoint, 수동 검증 script, tooling config, 테스트 파일, 인식 가능한 `React.lazy`/`next/dynamic` wrapper, 순수 re-export barrel을 보호합니다. 그래도 custom runtime entrypoint, 생성 파일, 프로젝트 고유 loader는 정적 분석 밖에 있을 수 있으므로 필요하면 `entry`, `keepPatterns`, suppression으로 명시하고, 남은 deletion candidate는 `--apply` 전에 report와 diff로 확인하세요.

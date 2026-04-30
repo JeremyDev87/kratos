@@ -199,6 +199,7 @@ You can place `kratos.config.json` in the project root. JSONC-style comments and
 {
   "ignore": ["storybook-static", "generated"],
   "ignorePatterns": ["src/generated/**", "!src/generated/keep.ts"],
+  "keepPatterns": ["scripts/manual-*.mjs"],
   "entry": ["src/bootstrap.ts"],
   "roots": ["src", "app", "pages"],
   "thresholds": {
@@ -224,6 +225,7 @@ You can place `kratos.config.json` in the project root. JSONC-style comments and
 - `ignore`: directory names added to the default ignore list.
 - `ignorePatterns`: `.gitignore`-style path patterns. Use `!` negation for exceptions.
 - After the default ignored directories, Kratos also reads the project root `.gitignore` automatically, then applies `ignorePatterns` for exceptions or overrides.
+- `keepPatterns`: `.gitignore`-style path patterns that keep matching files out of orphan/deletion candidates without excluding them from scan.
 - `entry`: root-relative files forced to be entrypoints.
 - `roots`: root-relative directories that limit scan scope.
 - `thresholds.cleanMinConfidence`: default confidence threshold for `clean`.
@@ -293,4 +295,4 @@ Kratos is open source under the MIT license.
 
 ## Note
 
-Kratos combines conservative static analysis with heuristics. The current implementation protects known Next.js route exports, package/workflow/action script entrypoints, manual verification scripts, tooling config files, test files, recognized `React.lazy`/`next/dynamic` wrappers, and pure re-export barrels. Custom runtime entrypoints, generated files, and project-specific loaders may still sit outside static analysis, so declare them with `entry`/suppressions when needed and review the remaining deletion candidates with the report and diff before running `--apply`.
+Kratos combines conservative static analysis with heuristics. The current implementation protects known Next.js route exports, package/workflow/action script entrypoints, manual verification scripts, tooling config files, test files, recognized `React.lazy`/`next/dynamic` wrappers, and pure re-export barrels. Custom runtime entrypoints, generated files, and project-specific loaders may still sit outside static analysis, so declare them with `entry`, `keepPatterns`, or suppressions when needed and review the remaining deletion candidates with the report and diff before running `--apply`.
