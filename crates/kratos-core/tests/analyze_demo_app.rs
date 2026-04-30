@@ -806,6 +806,76 @@ export const panelConfig = {};
 }
 
 #[test]
+fn analyze_project_protects_user_entries_and_keep_patterns_from_deletion_candidates() {
+    let project = TestProject::new("user-entry-keep-patterns");
+    project.write(
+        "kratos.config.json",
+        r#"{
+  "entry": ["src/bootstrap.ts"],
+  "keepPatterns": ["scripts/manual-*.mjs", "src/generated/**", "!src/generated/drop.ts"]
+}
+"#,
+    );
+    project.write("src/bootstrap.ts", "export const bootstrap = true;\n");
+    project.write(
+        "scripts/manual-release.mjs",
+        "export const manualRelease = true;\n",
+    );
+    project.write(
+        "src/generated/keep.ts",
+        "export const generatedKeep = true;\n",
+    );
+    project.write(
+        "src/generated/drop.ts",
+        "export const generatedDrop = true;\n",
+    );
+    project.write("scripts/drop.mjs", "export const dropScript = true;\n");
+
+    let report = analyze_project(project.root()).expect("project should analyze");
+    let deletion_candidates = relative_finding_files(
+        project.root(),
+        report
+            .findings
+            .deletion_candidates
+            .iter()
+            .map(|finding| &finding.file),
+    );
+    let orphan_files = relative_finding_files(
+        project.root(),
+        report
+            .findings
+            .orphan_files
+            .iter()
+            .map(|finding| &finding.file),
+    );
+
+    for protected in [
+        "src/bootstrap.ts",
+        "scripts/manual-release.mjs",
+        "src/generated/keep.ts",
+    ] {
+        assert!(
+            !deletion_candidates.contains(&protected.to_string()),
+            "{protected} should not be a deletion candidate"
+        );
+        assert!(
+            !orphan_files.contains(&protected.to_string()),
+            "{protected} should not be reported as an orphan file"
+        );
+    }
+
+    assert!(deletion_candidates.contains(&"src/generated/drop.ts".to_string()));
+    assert!(deletion_candidates.contains(&"scripts/drop.mjs".to_string()));
+
+    let user_entry = report
+        .modules
+        .iter()
+        .find(|module| module.relative_path == "src/bootstrap.ts")
+        .expect("user entry module should be scanned");
+    assert_eq!(user_entry.entrypoint_kind, Some(EntrypointKind::UserEntry));
+}
+
+#[test]
 fn analyze_project_reports_missing_base_url_imports_as_broken() {
     let project = TestProject::new("missing-baseurl");
     project.write(
