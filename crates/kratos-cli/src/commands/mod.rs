@@ -25,7 +25,7 @@ pub fn dispatch(command: &str, args: &[String], stdout: &mut dyn Write) -> Krato
         report::NAME => dispatch_command(report::SPEC, report::run, args, stdout),
         diff::NAME => dispatch_command(diff::SPEC, diff::run, args, stdout),
         clean::NAME => dispatch_command(clean::SPEC, clean::run, args, stdout),
-        _ => Err(KratosError::Config(format!("Unknown command: {command}"))),
+        _ => Err(KratosError::Config(format!("알 수 없는 명령: {command}"))),
     }
 }
 
@@ -36,9 +36,9 @@ pub fn is_known_command(command: &str) -> bool {
 pub fn format_root_help() -> String {
     let mut lines = vec![
         "Kratos".to_string(),
-        "Destroy dead code ruthlessly.".to_string(),
+        "죽은 코드를 가차 없이 제거합니다.".to_string(),
         String::new(),
-        "Usage:".to_string(),
+        "사용법:".to_string(),
     ];
 
     for command in COMMANDS {
@@ -47,7 +47,7 @@ pub fn format_root_help() -> String {
         }
     }
 
-    lines.extend([String::new(), "Commands:".to_string()]);
+    lines.extend([String::new(), "명령:".to_string()]);
 
     let max_name_length = COMMANDS
         .iter()
@@ -58,7 +58,7 @@ pub fn format_root_help() -> String {
         lines.push(format!(
             "  {:<width$}  {}",
             command.name,
-            command.summary,
+            display_command_summary(*command),
             width = max_name_length
         ));
     }
@@ -69,12 +69,12 @@ pub fn format_root_help() -> String {
 pub fn format_command_help(spec: CommandSpec) -> String {
     let mut lines = vec![
         "Kratos".to_string(),
-        "Destroy dead code ruthlessly.".to_string(),
+        "죽은 코드를 가차 없이 제거합니다.".to_string(),
         String::new(),
-        format!("{} command", spec.name),
-        spec.summary.to_string(),
+        format!("{} 명령", spec.name),
+        display_command_summary(spec).to_string(),
         String::new(),
-        "Usage:".to_string(),
+        "사용법:".to_string(),
     ];
 
     for usage in spec.usage {
@@ -82,12 +82,22 @@ pub fn format_command_help(spec: CommandSpec) -> String {
     }
 
     lines.push(String::new());
-    lines.push("Run `kratos --help` to see every command.".to_string());
+    lines.push("전체 명령을 보려면 `kratos --help`를 실행하세요.".to_string());
     lines.join("\n")
 }
 
 pub fn format_unknown_command(command: &str) -> String {
-    format!("Unknown command: {command}\n\n{}", format_root_help())
+    format!("알 수 없는 명령: {command}\n\n{}", format_root_help())
+}
+
+fn display_command_summary(spec: CommandSpec) -> &'static str {
+    match spec.name {
+        scan::NAME => "코드베이스를 분석하고 최신 리포트를 저장합니다.",
+        report::NAME => "저장된 리포트를 summary, json, markdown 형식으로 출력합니다.",
+        diff::NAME => "저장된 두 리포트를 비교합니다.",
+        clean::NAME => "삭제 후보를 표시하거나 --apply로 삭제합니다.",
+        _ => spec.summary,
+    }
 }
 
 fn dispatch_command(

@@ -78,7 +78,7 @@ fn diff_defaults_to_summary_and_rejects_invalid_format() {
     );
     assert_eq!(invalid_output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&invalid_output.stderr)
-        .contains("Kratos failed: Config error: Invalid diff format: bogus"));
+        .contains("Kratos 실행 실패: Config error: Invalid diff format: bogus"));
 }
 
 #[test]

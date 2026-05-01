@@ -12,7 +12,7 @@ pub fn run_cli_with_io(args: &[String], stdout: &mut dyn Write, stderr: &mut dyn
     match run(args, stdout, stderr) {
         Ok(code) => code,
         Err(error) => {
-            let _ = writeln!(stderr, "Kratos failed: {error}");
+            let _ = writeln!(stderr, "Kratos 실행 실패: {error}");
             1
         }
     }

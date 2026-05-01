@@ -10,7 +10,18 @@ fn root_help_matches_expected_shape() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "Kratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  diff    Compare two saved reports.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "Kratos\n죽은 코드를 가차 없이 제거합니다.\n\n사용법:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n명령:\n  scan    코드베이스를 분석하고 최신 리포트를 저장합니다.\n  report  저장된 리포트를 summary, json, markdown 형식으로 출력합니다.\n  diff    저장된 두 리포트를 비교합니다.\n  clean   삭제 후보를 표시하거나 --apply로 삭제합니다.\n"
+    );
+}
+
+#[test]
+fn command_help_matches_korean_policy() {
+    let output = run_cli(&["clean", "--help"]);
+
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "Kratos\n죽은 코드를 가차 없이 제거합니다.\n\nclean 명령\n삭제 후보를 표시하거나 --apply로 삭제합니다.\n\n사용법:\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n전체 명령을 보려면 `kratos --help`를 실행하세요.\n"
     );
 }
 
@@ -21,7 +32,7 @@ fn unknown_command_returns_help_and_exit_code_one() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "Unknown command: nope\n\nKratos\nDestroy dead code ruthlessly.\n\nUsage:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\nCommands:\n  scan    Analyze a codebase and save the latest report.\n  report  Print a saved report in summary, json, or markdown form.\n  diff    Compare two saved reports.\n  clean   Show deletion candidates or delete them with --apply.\n"
+        "알 수 없는 명령: nope\n\nKratos\n죽은 코드를 가차 없이 제거합니다.\n\n사용법:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n명령:\n  scan    코드베이스를 분석하고 최신 리포트를 저장합니다.\n  report  저장된 리포트를 summary, json, markdown 형식으로 출력합니다.\n  diff    저장된 두 리포트를 비교합니다.\n  clean   삭제 후보를 표시하거나 --apply로 삭제합니다.\n"
     );
 }
 
@@ -67,8 +78,8 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     let clean = run_cli(&["clean", report_path.to_str().expect("path should be utf8")]);
     assert!(clean.status.success());
     let clean_stdout = String::from_utf8_lossy(&clean.stdout);
-    assert!(clean_stdout.contains("Kratos clean dry run."));
-    assert!(clean_stdout.contains("Re-run with --apply to delete these files."));
+    assert!(clean_stdout.contains("Kratos clean 미리보기입니다."));
+    assert!(clean_stdout.contains("삭제하려면 --apply로 다시 실행하세요."));
 }
 
 #[test]
@@ -156,7 +167,7 @@ fn clean_accepts_legacy_v1_reports_through_cli() {
         &["clean", report_path.to_str().expect("path should be utf8")],
     );
     assert!(dry_run.status.success());
-    assert!(String::from_utf8_lossy(&dry_run.stdout).contains("Kratos clean dry run."));
+    assert!(String::from_utf8_lossy(&dry_run.stdout).contains("Kratos clean 미리보기입니다."));
 
     let apply = run_cli_in_dir(
         &project_root,
@@ -167,7 +178,9 @@ fn clean_accepts_legacy_v1_reports_through_cli() {
         ],
     );
     assert!(apply.status.success());
-    assert!(String::from_utf8_lossy(&apply.stdout).contains("Kratos clean deleted 2 file(s)."));
+    assert!(
+        String::from_utf8_lossy(&apply.stdout).contains("Kratos clean: 파일 2개를 삭제했습니다.")
+    );
     assert!(!project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(!project_root.join("src/lib/broken.ts").exists());
 }
@@ -198,7 +211,7 @@ fn unknown_flags_and_surplus_positionals_match_js_baseline() {
 
     let clean = run_cli_in_dir(&project_root, &["clean", "--bogus"]);
     assert!(clean.status.success());
-    assert!(String::from_utf8_lossy(&clean.stdout).contains("Kratos clean dry run."));
+    assert!(String::from_utf8_lossy(&clean.stdout).contains("Kratos clean 미리보기입니다."));
 }
 
 #[test]
@@ -221,7 +234,7 @@ fn invalid_report_format_is_an_error_per_plan_contract() {
     );
     assert_eq!(report.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&report.stderr)
-        .contains("Kratos failed: Config error: Invalid report format: bogus"));
+        .contains("Kratos 실행 실패: Config error: Invalid report format: bogus"));
 
     let hyphenated_report = run_cli_in_dir(
         &project_root,
@@ -234,7 +247,7 @@ fn invalid_report_format_is_an_error_per_plan_contract() {
     );
     assert_eq!(hyphenated_report.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&hyphenated_report.stderr)
-        .contains("Kratos failed: Config error: Invalid report format: -foo"));
+        .contains("Kratos 실행 실패: Config error: Invalid report format: -foo"));
 }
 
 #[test]
@@ -434,7 +447,7 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
     );
     assert!(dry_run.status.success());
     let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
-    assert!(dry_run_stdout.contains("Kratos clean dry run."));
+    assert!(dry_run_stdout.contains("Kratos clean 미리보기입니다."));
     assert!(dry_run_stdout.contains(&dead_file.display().to_string()));
     assert!(dead_file.exists());
 
@@ -447,7 +460,9 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
         ],
     );
     assert!(apply.status.success());
-    assert!(String::from_utf8_lossy(&apply.stdout).contains("Kratos clean deleted 1 file(s)."));
+    assert!(
+        String::from_utf8_lossy(&apply.stdout).contains("Kratos clean: 파일 1개를 삭제했습니다.")
+    );
     assert!(!dead_file.exists());
 }
 
@@ -463,7 +478,7 @@ fn scan_output_empty_string_defaults_and_missing_value_errors() {
     let missing_output = run_cli_in_dir(&project_root, &["scan", "--output", "--json"]);
     assert_eq!(missing_output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&missing_output.stderr)
-        .contains("Kratos failed: Config error: --output requires a path value"));
+        .contains("Kratos 실행 실패: Config error: --output requires a path value"));
     assert!(
         !project_root.join("--json").exists(),
         "missing output value should not create a stray report file"
@@ -497,7 +512,9 @@ fn boolean_flags_do_not_consume_following_positionals() {
         ],
     );
     assert!(clean.status.success());
-    assert!(String::from_utf8_lossy(&clean.stdout).contains("Kratos clean deleted 2 file(s)."));
+    assert!(
+        String::from_utf8_lossy(&clean.stdout).contains("Kratos clean: 파일 2개를 삭제했습니다.")
+    );
     assert!(!project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(!project_root.join("src/lib/broken.ts").exists());
 }
@@ -534,7 +551,7 @@ fn empty_inline_boolean_flags_stay_falsey_like_js() {
     );
     assert!(clean.status.success());
     let clean_stdout = String::from_utf8_lossy(&clean.stdout);
-    assert!(clean_stdout.contains("Kratos clean dry run."));
+    assert!(clean_stdout.contains("Kratos clean 미리보기입니다."));
     assert!(project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(project_root.join("src/lib/broken.ts").exists());
 }

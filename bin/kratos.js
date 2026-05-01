@@ -73,7 +73,7 @@ export function runLauncher(argv, options = {}) {
     return Number.isInteger(exitCode) ? exitCode : 1;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    stderr.write(`Kratos failed: ${detail}\n`);
+    stderr.write(`Kratos 실행 실패: ${detail}\n`);
     return 1;
   }
 }
