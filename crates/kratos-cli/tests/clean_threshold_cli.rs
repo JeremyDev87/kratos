@@ -13,17 +13,17 @@ fn clean_uses_config_threshold_and_flag_override() {
     let dry_run = run_cli_in_dir(&project_root, &["clean"]);
     assert!(dry_run.status.success());
     let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
-    assert!(dry_run_stdout.contains("Kratos clean dry run."));
-    assert!(dry_run_stdout.contains("Deletion targets: 0"));
-    assert!(dry_run_stdout.contains("Threshold-skipped targets: 2"));
+    assert!(dry_run_stdout.contains("Kratos clean 미리보기입니다."));
+    assert!(dry_run_stdout.contains("삭제 대상: 0"));
+    assert!(dry_run_stdout.contains("신뢰도 기준 미달로 건너뛴 대상: 2"));
     assert!(dry_run_stdout.contains("high-confidence.ts"));
     assert!(dry_run_stdout.contains("mid-confidence.ts"));
 
     let overridden = run_cli_in_dir(&project_root, &["clean", "--min-confidence", "0.9"]);
     assert!(overridden.status.success());
     let overridden_stdout = String::from_utf8_lossy(&overridden.stdout);
-    assert!(overridden_stdout.contains("Deletion targets: 1"));
-    assert!(overridden_stdout.contains("Threshold-skipped targets: 1"));
+    assert!(overridden_stdout.contains("삭제 대상: 1"));
+    assert!(overridden_stdout.contains("신뢰도 기준 미달로 건너뛴 대상: 1"));
     assert!(overridden_stdout.contains("high-confidence.ts"));
     assert!(overridden_stdout.contains("mid-confidence.ts"));
 
@@ -33,8 +33,8 @@ fn clean_uses_config_threshold_and_flag_override() {
     );
     assert!(apply.status.success());
     let apply_stdout = String::from_utf8_lossy(&apply.stdout);
-    assert!(apply_stdout.contains("Kratos clean deleted 1 file(s)."));
-    assert!(apply_stdout.contains("skipped_files: 1"));
+    assert!(apply_stdout.contains("Kratos clean: 파일 1개를 삭제했습니다."));
+    assert!(apply_stdout.contains("건너뛴 파일: 1"));
     assert!(!project_root.join("high-confidence.ts").exists());
     assert!(project_root.join("mid-confidence.ts").exists());
 }
@@ -47,7 +47,7 @@ fn clean_rejects_out_of_range_min_confidence_values() {
     let output = run_cli_in_dir(&project_root, &["clean", "--min-confidence", "1.5"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("--min-confidence must be between 0.0 and 1.0"));
+        .contains("--min-confidence는 0.0 이상 1.0 이하이어야 합니다"));
 }
 
 #[test]
@@ -62,9 +62,8 @@ fn clean_rejects_invalid_thresholds_config_shape() {
 
     let output = run_cli_in_dir(&project_root, &["clean"]);
     assert_eq!(output.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&output.stderr).contains(
-        "thresholds must be an object when specifying thresholds.cleanMinConfidence"
-    ));
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("thresholds must be an object when specifying thresholds.cleanMinConfidence"));
 }
 
 #[test]
@@ -78,10 +77,9 @@ fn clean_noop_ignores_invalid_thresholds_config_shape() {
     .expect("config should write");
 
     let report_path = project_root.join(".kratos/latest-report.json");
-    let mut report: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(&report_path).expect("report should read"),
-    )
-    .expect("report should parse");
+    let mut report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&report_path).expect("report should read"))
+            .expect("report should parse");
     report["summary"]["deletionCandidates"] = json!(0);
     report["findings"]["deletionCandidates"] = json!([]);
     std::fs::write(
@@ -92,7 +90,7 @@ fn clean_noop_ignores_invalid_thresholds_config_shape() {
 
     let output = run_cli_in_dir(&project_root, &["clean"]);
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Kratos clean found no deletion candidates."));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Kratos clean: 삭제 후보가 없습니다."));
 }
 
 #[test]
@@ -106,7 +104,7 @@ fn clean_apply_false_stays_dry_run() {
     );
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Kratos clean dry run."));
+    assert!(stdout.contains("Kratos clean 미리보기입니다."));
     assert!(project_root.join("high-confidence.ts").exists());
     assert!(project_root.join("mid-confidence.ts").exists());
 }
@@ -122,7 +120,7 @@ fn clean_apply_empty_string_stays_dry_run() {
     );
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Kratos clean dry run."));
+    assert!(stdout.contains("Kratos clean 미리보기입니다."));
     assert!(project_root.join("high-confidence.ts").exists());
     assert!(project_root.join("mid-confidence.ts").exists());
 }
@@ -138,7 +136,7 @@ fn clean_rejects_invalid_apply_value() {
     );
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("--apply must be a boolean flag or an explicit boolean value"));
+        .contains("--apply는 boolean flag이거나 명시적인 boolean 값이어야 합니다"));
     assert!(project_root.join("high-confidence.ts").exists());
     assert!(project_root.join("mid-confidence.ts").exists());
 }
@@ -159,7 +157,7 @@ fn clean_rejects_surplus_positionals() {
     );
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("clean accepts at most one report-path-or-root argument"));
+        .contains("clean은 report-path-or-root 인자를 최대 하나만 받을 수 있습니다"));
 }
 
 #[test]

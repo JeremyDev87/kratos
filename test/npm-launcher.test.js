@@ -52,7 +52,7 @@ test("runLauncher forwards argv to runCli and returns its exit code", () => {
   assert.equal(stderr.read(), "");
 });
 
-test("runLauncher formats missing addon failures with Kratos prefix", () => {
+test("runLauncher formats missing addon failures with Korean Kratos prefix", () => {
   const stderr = captureStream();
 
   const exitCode = runLauncher(["node", "bin/kratos.js", "scan"], {
@@ -67,7 +67,7 @@ test("runLauncher formats missing addon failures with Kratos prefix", () => {
   assert.equal(exitCode, 1);
   assert.match(
     stderr.read(),
-    /Kratos failed: Failed to load native addon package @jeremyfellaz\/kratos-linux-x64-gnu:/,
+    /Kratos 실행 실패: Failed to load native addon package @jeremyfellaz\/kratos-linux-x64-gnu:/,
   );
 });
 
@@ -174,6 +174,6 @@ function expectedMissingAddonPattern() {
   const expectedPackageName = resolveAddonPackageName(process.platform, process.arch);
 
   return new RegExp(
-    `Kratos failed: Failed to load native addon package ${escapeForRegex(expectedPackageName)}:`,
+    `Kratos 실행 실패: Failed to load native addon package ${escapeForRegex(expectedPackageName)}:`,
   );
 }

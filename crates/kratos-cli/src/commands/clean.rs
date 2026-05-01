@@ -4,6 +4,7 @@ use std::io::Write;
 use kratos_core::clean::{clean_from_report_with_min_confidence, plan_clean_candidates};
 use kratos_core::config::load_clean_min_confidence;
 use kratos_core::report::parse_report_json;
+use kratos_core::report_format::display_known_reason;
 use kratos_core::KratosResult;
 
 use super::{parse_cli_options, resolve_report_input, write_output, CommandSpec, ParsedFlagValue};
@@ -11,7 +12,7 @@ use super::{parse_cli_options, resolve_report_input, write_output, CommandSpec, 
 pub const NAME: &str = "clean";
 pub const SPEC: CommandSpec = CommandSpec {
     name: NAME,
-    summary: "Show deletion candidates or delete them with --apply.",
+    summary: "삭제 후보를 표시하거나 --apply로 삭제합니다.",
     usage: &["kratos clean [report-path-or-root] [--apply] [--min-confidence value]"],
 };
 
@@ -30,7 +31,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     let report = parse_report_json(&raw)?;
 
     if report.findings.deletion_candidates.is_empty() {
-        write_output(stdout, "Kratos clean found no deletion candidates.")?;
+        write_output(stdout, "Kratos clean: 삭제 후보가 없습니다.")?;
         return Ok(0);
     }
 
@@ -49,7 +50,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     write_output(
         stdout,
         &format!(
-            "Kratos clean deleted {} file(s).\nskipped_files: {}",
+            "Kratos clean: 파일 {}개를 삭제했습니다.\n건너뛴 파일: {}",
             outcome.deleted_files, outcome.skipped_files
         ),
     )?;
@@ -60,7 +61,7 @@ fn parse_args(args: &[String]) -> KratosResult<CleanArgs> {
     let parsed = parse_cli_options(args, &["min-confidence"], &["apply"]);
     if parsed.positionals.len() > 1 {
         return Err(kratos_core::KratosError::Config(
-            "clean accepts at most one report-path-or-root argument".to_string(),
+            "clean은 report-path-or-root 인자를 최대 하나만 받을 수 있습니다".to_string(),
         ));
     }
 
@@ -92,7 +93,7 @@ fn parse_explicit_boolean(raw: &str) -> KratosResult<bool> {
         "true" | "1" | "yes" | "on" => Ok(true),
         "false" | "0" | "no" | "off" => Ok(false),
         _ => Err(kratos_core::KratosError::Config(
-            "--apply must be a boolean flag or an explicit boolean value".to_string(),
+            "--apply는 boolean flag이거나 명시적인 boolean 값이어야 합니다".to_string(),
         )),
     }
 }
@@ -101,7 +102,7 @@ fn parse_min_confidence(value: &ParsedFlagValue) -> KratosResult<f32> {
     let raw = match value {
         ParsedFlagValue::Present => {
             return Err(kratos_core::KratosError::Config(
-                "--min-confidence requires a value".to_string(),
+                "--min-confidence에는 값이 필요합니다".to_string(),
             ))
         }
         ParsedFlagValue::Value(raw) => raw.trim(),
@@ -109,17 +110,19 @@ fn parse_min_confidence(value: &ParsedFlagValue) -> KratosResult<f32> {
 
     if raw.is_empty() {
         return Err(kratos_core::KratosError::Config(
-            "--min-confidence requires a value".to_string(),
+            "--min-confidence에는 값이 필요합니다".to_string(),
         ));
     }
 
     let parsed = raw.parse::<f32>().map_err(|_| {
-        kratos_core::KratosError::Config("--min-confidence must be between 0.0 and 1.0".to_string())
+        kratos_core::KratosError::Config(
+            "--min-confidence는 0.0 이상 1.0 이하이어야 합니다".to_string(),
+        )
     })?;
 
     if !parsed.is_finite() || !(0.0..=1.0).contains(&parsed) {
         return Err(kratos_core::KratosError::Config(
-            "--min-confidence must be between 0.0 and 1.0".to_string(),
+            "--min-confidence는 0.0 이상 1.0 이하이어야 합니다".to_string(),
         ));
     }
 
@@ -128,9 +131,9 @@ fn parse_min_confidence(value: &ParsedFlagValue) -> KratosResult<f32> {
 
 fn format_clean_plan(plan: &kratos_core::clean::CleanThresholdPlan) -> String {
     let mut lines = vec![
-        "Kratos clean dry run.".to_string(),
+        "Kratos clean 미리보기입니다.".to_string(),
         String::new(),
-        format!("Deletion targets: {}", plan.deletion_targets.len()),
+        format!("삭제 대상: {}", plan.deletion_targets.len()),
     ];
 
     for candidate in &plan.deletion_targets {
@@ -140,7 +143,7 @@ fn format_clean_plan(plan: &kratos_core::clean::CleanThresholdPlan) -> String {
     if !plan.threshold_skipped_targets.is_empty() {
         lines.push(String::new());
         lines.push(format!(
-            "Threshold-skipped targets: {}",
+            "신뢰도 기준 미달로 건너뛴 대상: {}",
             plan.threshold_skipped_targets.len()
         ));
 
@@ -150,15 +153,15 @@ fn format_clean_plan(plan: &kratos_core::clean::CleanThresholdPlan) -> String {
     }
 
     lines.push(String::new());
-    lines.push("Re-run with --apply to delete these files.".to_string());
+    lines.push("삭제하려면 --apply로 다시 실행하세요.".to_string());
     lines.join("\n")
 }
 
 fn format_candidate_line(candidate: &kratos_core::model::DeletionCandidateFinding) -> String {
     format!(
-        "- {} (confidence {:.2}, {})",
+        "- {} (신뢰도 {:.2}, {})",
         candidate.file.display(),
         candidate.confidence,
-        candidate.reason
+        display_known_reason(&candidate.reason)
     )
 }
