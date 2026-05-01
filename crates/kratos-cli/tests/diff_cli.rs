@@ -30,12 +30,12 @@ fn diff_accepts_project_roots_and_report_paths() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("# Kratos Diff"));
-    assert!(stdout.contains(&format!("Before: {}", before_report_path.display())));
-    assert!(stdout.contains(&format!("After: {}", after_report_path.display())));
-    assert!(stdout.contains("## Broken imports"));
-    assert!(stdout.contains("### Introduced (1)"));
-    assert!(stdout.contains("### Resolved (1)"));
+    assert!(stdout.contains("# Kratos Diff 결과"));
+    assert!(stdout.contains(&format!("이전: {}", before_report_path.display())));
+    assert!(stdout.contains(&format!("이후: {}", after_report_path.display())));
+    assert!(stdout.contains("## 깨진 import"));
+    assert!(stdout.contains("### 새로 발생 (1)"));
+    assert!(stdout.contains("### 해결됨 (1)"));
     assert!(stdout.contains("./missing-b"));
 }
 
@@ -60,9 +60,9 @@ fn diff_defaults_to_summary_and_rejects_invalid_format() {
     );
     assert!(summary_output.status.success());
     let stdout = String::from_utf8_lossy(&summary_output.stdout);
-    assert!(stdout.contains("Kratos diff complete."));
-    assert!(stdout.contains("Broken imports: introduced 1, resolved 1, persisted 1"));
-    assert!(stdout.contains("Totals: introduced 1, resolved 1, persisted 1"));
+    assert!(stdout.contains("Kratos diff 완료."));
+    assert!(stdout.contains("깨진 import: 새로 발생 1, 해결됨 1, 유지됨 1"));
+    assert!(stdout.contains("합계: 새로 발생 1, 해결됨 1, 유지됨 1"));
 
     let invalid_output = run_cli_in_dir(
         &before_root,

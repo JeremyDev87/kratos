@@ -175,18 +175,19 @@ fn diff_formatters_render_summary_markdown_and_json() {
 
     let summary =
         format_diff_summary(&diff, &before_path, &after_path).expect("summary should format");
-    assert!(summary.contains("Kratos diff complete."));
-    assert!(summary.contains("Before: /tmp/before-report.json"));
-    assert!(summary.contains("Broken imports: introduced 1, resolved 1, persisted 0"));
-    assert!(summary.contains("Totals: introduced 1, resolved 1, persisted 0"));
+    assert!(summary.contains("Kratos diff 완료."));
+    assert!(summary.contains("이전: /tmp/before-report.json"));
+    assert!(summary.contains("깨진 import: 새로 발생 1, 해결됨 1, 유지됨 0"));
+    assert!(summary.contains("합계: 새로 발생 1, 해결됨 1, 유지됨 0"));
 
     let markdown =
         format_diff_markdown(&diff, &before_path, &after_path).expect("markdown should format");
-    assert!(markdown.contains("# Kratos Diff"));
-    assert!(markdown.contains("## Broken imports"));
-    assert!(markdown.contains("### Introduced (1)"));
-    assert!(markdown.contains("### Resolved (1)"));
-    assert!(markdown.contains("### Persisted (0)"));
+    assert!(markdown.contains("# Kratos Diff 결과"));
+    assert!(markdown.contains("## 깨진 import"));
+    assert!(markdown.contains("### 새로 발생 (1)"));
+    assert!(markdown.contains("### 해결됨 (1)"));
+    assert!(markdown.contains("### 유지됨 (0)"));
+    assert!(markdown.contains("- 없음"));
 
     let json = format_diff_json(&diff, &before_path, &after_path).expect("json should format");
     let value: Value = serde_json::from_str(&json).expect("diff json should parse");
@@ -206,6 +207,73 @@ fn diff_formatters_render_summary_markdown_and_json() {
         value["findings"]["brokenImports"]["introduced"][0]["file"],
         Value::from("/repo/src/b.ts")
     );
+}
+
+#[test]
+fn diff_formatters_keep_human_markdown_labels_in_korean() {
+    let empty_report = report_v2(
+        "/repo/empty",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(vec![], vec![], vec![], vec![], vec![], vec![]),
+        vec![],
+    );
+    let empty_diff = diff_reports(&empty_report, &empty_report);
+    let before_path = PathBuf::from("/tmp/before-report.json");
+    let after_path = PathBuf::from("/tmp/after-report.json");
+    let empty_summary = format_diff_summary(&empty_diff, &before_path, &after_path)
+        .expect("empty summary should format");
+    assert!(empty_summary.contains("변경된 항목이 없습니다."));
+
+    let before = report_v2(
+        "/repo/before",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(vec![], vec![], vec![], vec![], vec![], vec![]),
+        vec![],
+    );
+    let after = report_v2(
+        "/repo/after",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![],
+            vec![],
+            vec![],
+            vec![unused_import(
+                "/repo/after/src/use.ts",
+                "./lib",
+                "helper",
+                "helper",
+            )],
+            vec![route_entrypoint(
+                "/repo/after/src/page.tsx",
+                EntrypointKind::NextAppRoute,
+            )],
+            vec![deletion_candidate(
+                "/repo/after/src/delete.ts",
+                "Module has no inbound references and is not treated as an entrypoint.",
+                0.66,
+                true,
+            )],
+        ),
+        vec![],
+    );
+    let diff = diff_reports(&before, &after);
+    let summary =
+        format_diff_summary(&diff, &before_path, &after_path).expect("summary should format");
+    let markdown =
+        format_diff_markdown(&diff, &before_path, &after_path).expect("markdown should format");
+
+    assert!(summary.contains("라우트 진입점: 새로 발생 1, 해결됨 0, 유지됨 0"));
+    assert!(markdown.contains("## 라우트 진입점"));
+    assert!(markdown.contains("- /repo/after/src/use.ts -> `helper` (출처: `./lib`)"));
+    assert!(markdown.contains(
+        "- /repo/after/src/delete.ts (모듈에 참조가 없고 진입점으로 취급되지 않습니다., 신뢰도 0.66)"
+    ));
 }
 
 #[test]
