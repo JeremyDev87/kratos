@@ -1,53 +1,53 @@
-# Kratos Report
+# Kratos 리포트
 
-> 6 actionable findings: 1 broken import, 2 cleanup candidates, 3 dead exports.
+> 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개.
 
-- Generated: <GENERATED_AT>
-- Root: <ROOT>
-- Report: <REPORT>
+- 생성 시각: <GENERATED_AT>
+- 루트: <ROOT>
+- 리포트: <REPORT>
 
-## Summary
+## 요약
 
-- Files scanned: 5
-- Entrypoints: 1
-- Broken imports: 1
-- Orphan files: 2
-- Dead exports: 3
-- Unused imports: 0
-- Route entrypoints: 1
-- Deletion candidates: 2
+- 스캔한 파일: 5
+- 진입점: 1
+- 깨진 import: 1
+- 고아 파일: 2
+- 사용되지 않는 export: 3
+- 사용되지 않는 import: 0
+- 라우트 진입점: 1
+- 삭제 후보: 2
 
-## Impact
+## 영향
 
-- 6 actionable findings: 1 broken import, 2 cleanup candidates, 3 dead exports.
-- Best next move: Fix broken imports before deleting files.
-- Preview cleanup: `kratos clean <REPORT>`
-- Refresh markdown: `kratos report <REPORT> --format md`
+- 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개.
+- 다음 권장 작업: 파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.
+- 정리 미리보기: `kratos clean <REPORT>`
+- Markdown 갱신: `kratos report <REPORT> --format md`
 
-## Broken imports
+## 깨진 import
 
 - src/lib/broken.ts -> `./missing-helper`
 
-## Orphan files
+## 고아 파일
 
-- src/components/DeadWidget.tsx (Component-like module has no inbound references.)
-- src/lib/broken.ts (Module has no inbound references and is not treated as an entrypoint.)
+- src/components/DeadWidget.tsx (컴포넌트로 보이는 모듈에 참조가 없습니다.)
+- src/lib/broken.ts (모듈에 참조가 없고 진입점으로 취급되지 않습니다.)
 
-## Dead exports
+## 사용되지 않는 export
 
 - src/components/DeadWidget.tsx -> `DeadWidget`
 - src/lib/broken.ts -> `brokenFeature`
 - src/lib/math.ts -> `multiply`
 
-## Unused imports
+## 사용되지 않는 import
 
-- None
+- 없음
 
-## Route entrypoints
+## 라우트 진입점
 
 - pages/home.tsx (next-pages-route)
 
-## Deletion candidates
+## 삭제 후보
 
-- src/components/DeadWidget.tsx (Component-like module has no inbound references., confidence 0.92)
-- src/lib/broken.ts (Module has no inbound references and is not treated as an entrypoint., confidence 0.88)
+- src/components/DeadWidget.tsx (컴포넌트로 보이는 모듈에 참조가 없습니다., 신뢰도 0.92)
+- src/lib/broken.ts (모듈에 참조가 없고 진입점으로 취급되지 않습니다., 신뢰도 0.88)

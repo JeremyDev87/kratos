@@ -11,60 +11,57 @@ pub fn format_summary_report(
 ) -> KratosResult<String> {
     let impact = impact_summary(report);
     let mut lines = vec![
-        title.to_string(),
+        display_title(title).to_string(),
         String::new(),
-        format!("Impact: {}", impact.headline),
-        format!("Best next move: {}", impact.best_next_move),
+        format!("영향: {}", impact.headline),
+        format!("다음 권장 작업: {}", impact.best_next_move),
         String::new(),
-        format!("Root: {}", path_to_string(&report.root)),
-        format!("Files scanned: {}", report.summary.files_scanned),
-        format!("Entrypoints: {}", report.summary.entrypoints),
-        format!("Broken imports: {}", report.summary.broken_imports),
-        format!("Orphan files: {}", report.summary.orphan_files),
-        format!("Dead exports: {}", report.summary.dead_exports),
-        format!("Unused imports: {}", report.summary.unused_imports),
-        format!("Route entrypoints: {}", report.summary.route_entrypoints),
-        format!(
-            "Deletion candidates: {}",
-            report.summary.deletion_candidates
-        ),
+        format!("루트: {}", path_to_string(&report.root)),
+        format!("스캔한 파일: {}", report.summary.files_scanned),
+        format!("진입점: {}", report.summary.entrypoints),
+        format!("깨진 import: {}", report.summary.broken_imports),
+        format!("고아 파일: {}", report.summary.orphan_files),
+        format!("사용되지 않는 export: {}", report.summary.dead_exports),
+        format!("사용되지 않는 import: {}", report.summary.unused_imports),
+        format!("라우트 진입점: {}", report.summary.route_entrypoints),
+        format!("삭제 후보: {}", report.summary.deletion_candidates),
     ];
     if report.summary.suppressed_findings > 0 {
         lines.push(format!(
-            "Suppressed findings: {}",
+            "숨김 처리된 항목: {}",
             report.summary.suppressed_findings
         ));
     }
     lines.push(String::new());
-    lines.push(format!("Saved report: {}", path_to_string(report_path)));
+    lines.push(format!("저장된 리포트: {}", path_to_string(report_path)));
     append_next_steps(&mut lines, report, report_path);
 
     append_preview(
         &mut lines,
-        "Broken imports",
+        "깨진 import",
         &report.findings.broken_imports,
         |item| format!("{} -> {}", display_path(report, &item.file), item.source),
     );
     append_deletion_preview(&mut lines, report);
     append_preview(
         &mut lines,
-        "Orphan files",
+        "고아 파일",
         &report.findings.orphan_files,
         |item| display_path(report, &item.file),
     );
     append_preview(
         &mut lines,
-        "Dead exports",
+        "사용되지 않는 export",
         &report.findings.dead_exports,
         |item| format!("{}#{}", display_path(report, &item.file), item.export_name),
     );
     append_preview(
         &mut lines,
-        "Unused imports",
+        "사용되지 않는 import",
         &report.findings.unused_imports,
         |item| {
             format!(
-                "{} -> {} from {}",
+                "{} -> {} (출처: {})",
                 display_path(report, &item.file),
                 item.local,
                 item.source
@@ -73,7 +70,7 @@ pub fn format_summary_report(
     );
     append_preview(
         &mut lines,
-        "Route entrypoints",
+        "라우트 진입점",
         &report.findings.route_entrypoints,
         |item| {
             format!(
@@ -89,34 +86,31 @@ pub fn format_summary_report(
 
 pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosResult<String> {
     let mut lines = vec![
-        "# Kratos Report".to_string(),
+        "# Kratos 리포트".to_string(),
         String::new(),
         format!("> {}", impact_summary(report).headline),
         String::new(),
         format!(
-            "- Generated: {}",
-            report.generated_at.as_deref().unwrap_or("undefined")
+            "- 생성 시각: {}",
+            report.generated_at.as_deref().unwrap_or("정의되지 않음")
         ),
-        format!("- Root: {}", path_to_string(&report.root)),
-        format!("- Report: {}", path_to_string(report_path)),
+        format!("- 루트: {}", path_to_string(&report.root)),
+        format!("- 리포트: {}", path_to_string(report_path)),
         String::new(),
-        "## Summary".to_string(),
+        "## 요약".to_string(),
         String::new(),
-        format!("- Files scanned: {}", report.summary.files_scanned),
-        format!("- Entrypoints: {}", report.summary.entrypoints),
-        format!("- Broken imports: {}", report.summary.broken_imports),
-        format!("- Orphan files: {}", report.summary.orphan_files),
-        format!("- Dead exports: {}", report.summary.dead_exports),
-        format!("- Unused imports: {}", report.summary.unused_imports),
-        format!("- Route entrypoints: {}", report.summary.route_entrypoints),
-        format!(
-            "- Deletion candidates: {}",
-            report.summary.deletion_candidates
-        ),
+        format!("- 스캔한 파일: {}", report.summary.files_scanned),
+        format!("- 진입점: {}", report.summary.entrypoints),
+        format!("- 깨진 import: {}", report.summary.broken_imports),
+        format!("- 고아 파일: {}", report.summary.orphan_files),
+        format!("- 사용되지 않는 export: {}", report.summary.dead_exports),
+        format!("- 사용되지 않는 import: {}", report.summary.unused_imports),
+        format!("- 라우트 진입점: {}", report.summary.route_entrypoints),
+        format!("- 삭제 후보: {}", report.summary.deletion_candidates),
     ];
     if report.summary.suppressed_findings > 0 {
         lines.push(format!(
-            "- Suppressed findings: {}",
+            "- 숨김 처리된 항목: {}",
             report.summary.suppressed_findings
         ));
     }
@@ -125,19 +119,25 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
     push_markdown_impact(&mut lines, report, report_path);
     push_markdown_section(
         &mut lines,
-        "Broken imports",
+        "깨진 import",
         &report.findings.broken_imports,
         |item| format!("{} -> `{}`", display_path(report, &item.file), item.source),
     );
     push_markdown_section(
         &mut lines,
-        "Orphan files",
+        "고아 파일",
         &report.findings.orphan_files,
-        |item| format!("{} ({})", display_path(report, &item.file), item.reason),
+        |item| {
+            format!(
+                "{} ({})",
+                display_path(report, &item.file),
+                display_known_reason(&item.reason)
+            )
+        },
     );
     push_markdown_section(
         &mut lines,
-        "Dead exports",
+        "사용되지 않는 export",
         &report.findings.dead_exports,
         |item| {
             format!(
@@ -149,11 +149,11 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
     );
     push_markdown_section(
         &mut lines,
-        "Unused imports",
+        "사용되지 않는 import",
         &report.findings.unused_imports,
         |item| {
             format!(
-                "{} -> `{}` from `{}`",
+                "{} -> `{}` (출처: `{}`)",
                 display_path(report, &item.file),
                 item.local,
                 item.source
@@ -162,7 +162,7 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
     );
     push_markdown_section(
         &mut lines,
-        "Route entrypoints",
+        "라우트 진입점",
         &report.findings.route_entrypoints,
         |item| {
             format!(
@@ -174,13 +174,13 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
     );
     push_markdown_section(
         &mut lines,
-        "Deletion candidates",
+        "삭제 후보",
         &report.findings.deletion_candidates,
         |item| {
             format!(
-                "{} ({}, confidence {})",
+                "{} ({}, 신뢰도 {})",
                 display_path(report, &item.file),
-                item.reason,
+                display_known_reason(&item.reason),
                 item.confidence
             )
         },
@@ -203,53 +203,37 @@ fn impact_summary(report: &ReportV2) -> ImpactSummary {
 
     let headline = if actionable_total == 0 {
         format!(
-            "No actionable findings across {}.",
-            plural(
-                report.summary.files_scanned,
-                "scanned file",
-                "scanned files"
-            )
+            "스캔한 파일 {}개에서 조치할 항목이 없습니다.",
+            report.summary.files_scanned
         )
     } else {
         let mut parts = Vec::new();
         if breakages > 0 {
-            parts.push(plural(breakages, "broken import", "broken imports"));
+            parts.push(count_label(breakages, "깨진 import"));
         }
         if cleanup_candidates > 0 {
-            parts.push(plural(
-                cleanup_candidates,
-                "cleanup candidate",
-                "cleanup candidates",
-            ));
+            parts.push(count_label(cleanup_candidates, "정리 후보"));
         }
         if dead_exports > 0 {
-            parts.push(plural(dead_exports, "dead export", "dead exports"));
+            parts.push(count_label(dead_exports, "사용되지 않는 export"));
         }
         if unused_imports > 0 {
-            parts.push(plural(unused_imports, "unused import", "unused imports"));
+            parts.push(count_label(unused_imports, "사용되지 않는 import"));
         }
 
-        format!(
-            "{}: {}.",
-            plural(
-                actionable_total,
-                "actionable finding",
-                "actionable findings"
-            ),
-            parts.join(", ")
-        )
+        format!("조치할 항목 {}개: {}.", actionable_total, parts.join(", "))
     };
 
     let best_next_move = if breakages > 0 {
-        "Fix broken imports before deleting files.".to_string()
+        "파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.".to_string()
     } else if cleanup_candidates > 0 {
-        "Run the clean preview and remove high-confidence dead files.".to_string()
+        "정리 미리보기를 실행하고 신뢰도 높은 미사용 파일을 제거하세요.".to_string()
     } else if dead_exports > 0 {
-        "Prune dead exports or confirm they are intentionally public API.".to_string()
+        "사용되지 않는 export를 제거하거나 의도된 공개 API인지 확인하세요.".to_string()
     } else if unused_imports > 0 {
-        "Remove unused imports to shrink noisy dependencies.".to_string()
+        "사용되지 않는 import를 제거해 불필요한 의존성을 줄이세요.".to_string()
     } else {
-        "Keep the JSON report as a baseline for future diffs.".to_string()
+        "향후 diff 기준선으로 JSON 리포트를 보관하세요.".to_string()
     };
 
     ImpactSummary {
@@ -258,25 +242,21 @@ fn impact_summary(report: &ReportV2) -> ImpactSummary {
     }
 }
 
-fn plural(count: usize, singular: &str, plural: &str) -> String {
-    if count == 1 {
-        format!("1 {singular}")
-    } else {
-        format!("{count} {plural}")
-    }
+fn count_label(count: usize, label: &str) -> String {
+    format!("{label} {count}개")
 }
 
 fn append_next_steps(lines: &mut Vec<String>, report: &ReportV2, report_path: &Path) {
     let report_arg = shell_arg(report_path);
 
     lines.push(String::new());
-    lines.push("Next steps:".to_string());
+    lines.push("다음 단계:".to_string());
 
     if report.summary.deletion_candidates > 0 {
-        lines.push(format!("- Preview cleanup: kratos clean {report_arg}"));
+        lines.push(format!("- 정리 미리보기: kratos clean {report_arg}"));
     }
     lines.push(format!(
-        "- Shareable markdown: kratos report {report_arg} --format md"
+        "- 공유용 Markdown: kratos report {report_arg} --format md"
     ));
 }
 
@@ -284,15 +264,15 @@ fn push_markdown_impact(lines: &mut Vec<String>, report: &ReportV2, report_path:
     let impact = impact_summary(report);
     let report_arg = shell_arg(report_path);
 
-    lines.push("## Impact".to_string());
+    lines.push("## 영향".to_string());
     lines.push(String::new());
     lines.push(format!("- {}", impact.headline));
-    lines.push(format!("- Best next move: {}", impact.best_next_move));
+    lines.push(format!("- 다음 권장 작업: {}", impact.best_next_move));
     if report.summary.deletion_candidates > 0 {
-        lines.push(format!("- Preview cleanup: `kratos clean {report_arg}`"));
+        lines.push(format!("- 정리 미리보기: `kratos clean {report_arg}`"));
     }
     lines.push(format!(
-        "- Refresh markdown: `kratos report {report_arg} --format md`"
+        "- Markdown 갱신: `kratos report {report_arg} --format md`"
     ));
     lines.push(String::new());
 }
@@ -303,20 +283,20 @@ fn append_deletion_preview(lines: &mut Vec<String>, report: &ReportV2) {
     }
 
     lines.push(String::new());
-    lines.push("Top cleanup candidates:".to_string());
+    lines.push("상위 정리 후보:".to_string());
 
     for item in report.findings.deletion_candidates.iter().take(5) {
         lines.push(format!(
-            "- {} (confidence {}, {})",
+            "- {} (신뢰도 {}, {})",
             display_path(report, &item.file),
             item.confidence,
-            item.reason
+            display_known_reason(&item.reason)
         ));
     }
 
     if report.findings.deletion_candidates.len() > 5 {
         lines.push(format!(
-            "- ...and {} more",
+            "- ...외 {}개",
             report.findings.deletion_candidates.len() - 5
         ));
     }
@@ -359,7 +339,7 @@ fn append_preview<T>(
     }
 
     if items.len() > 5 {
-        lines.push(format!("- ...and {} more", items.len() - 5));
+        lines.push(format!("- ...외 {}개", items.len() - 5));
     }
 }
 
@@ -373,7 +353,7 @@ fn push_markdown_section<T>(
     lines.push(String::new());
 
     if items.is_empty() {
-        lines.push("- None".to_string());
+        lines.push("- 없음".to_string());
         lines.push(String::new());
         return;
     }
@@ -383,4 +363,27 @@ fn push_markdown_section<T>(
     }
 
     lines.push(String::new());
+}
+
+fn display_title(title: &str) -> &str {
+    match title {
+        "Kratos scan complete." => "Kratos 스캔 완료.",
+        "Kratos report." => "Kratos 리포트.",
+        other => other,
+    }
+}
+
+pub fn display_known_reason(reason: &str) -> &str {
+    match reason {
+        "Component-like module has no inbound references." => {
+            "컴포넌트로 보이는 모듈에 참조가 없습니다."
+        }
+        "Route-like module is not connected to any router entry." => {
+            "라우트로 보이는 모듈이 어떤 라우터 진입점에도 연결되지 않았습니다."
+        }
+        "Module has no inbound references and is not treated as an entrypoint." => {
+            "모듈에 참조가 없고 진입점으로 취급되지 않습니다."
+        }
+        other => other,
+    }
 }

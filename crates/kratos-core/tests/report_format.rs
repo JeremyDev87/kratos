@@ -14,13 +14,13 @@ fn summary_formatter_allows_custom_titles_without_changing_body_shape() {
     let rendered = format_summary_report(&report, &report_path, "Kratos scan complete.")
         .expect("summary should format");
 
-    assert!(rendered.starts_with("Kratos scan complete.\n\n"));
-    assert!(rendered.contains(&format!("Saved report: {}", report_path.display())));
-    assert!(rendered.contains("Broken imports:"));
+    assert!(rendered.starts_with("Kratos 스캔 완료.\n\n"));
+    assert!(rendered.contains(&format!("저장된 리포트: {}", report_path.display())));
+    assert!(rendered.contains("깨진 import:"));
 }
 
 #[test]
-fn markdown_formatter_uses_undefined_when_generated_at_is_missing() {
+fn markdown_formatter_uses_korean_fallback_when_generated_at_is_missing() {
     let report = parse_report_json(
         "{\"schemaVersion\":2,\"project\":{\"root\":\"/tmp/demo\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"graph\":{\"modules\":[]}}",
     )
@@ -29,7 +29,7 @@ fn markdown_formatter_uses_undefined_when_generated_at_is_missing() {
     let rendered = format_markdown_report(&report, Path::new("/tmp/demo/report.json"))
         .expect("markdown should format");
 
-    assert!(rendered.contains("- Generated: undefined"));
+    assert!(rendered.contains("- 생성 시각: 정의되지 않음"));
 }
 
 #[test]
@@ -39,15 +39,19 @@ fn summary_and_markdown_formatters_accept_future_schema_versions() {
     )
     .expect("future-schema report should parse");
 
-    let summary = format_summary_report(&report, Path::new("/tmp/demo/report.json"), "Kratos report.")
-        .expect("summary should format");
+    let summary = format_summary_report(
+        &report,
+        Path::new("/tmp/demo/report.json"),
+        "Kratos report.",
+    )
+    .expect("summary should format");
     let markdown = format_markdown_report(&report, Path::new("/tmp/demo/report.json"))
         .expect("markdown should format");
 
-    assert!(summary.contains("Kratos report."));
-    assert!(summary.contains("Saved report: /tmp/demo/report.json"));
-    assert!(markdown.contains("# Kratos Report"));
-    assert!(markdown.contains("- Report: /tmp/demo/report.json"));
+    assert!(summary.contains("Kratos 리포트."));
+    assert!(summary.contains("저장된 리포트: /tmp/demo/report.json"));
+    assert!(markdown.contains("# Kratos 리포트"));
+    assert!(markdown.contains("- 리포트: /tmp/demo/report.json"));
 }
 
 #[test]

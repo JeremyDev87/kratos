@@ -1,39 +1,39 @@
-Kratos report.
+Kratos 리포트.
 
-Impact: 6 actionable findings: 1 broken import, 2 cleanup candidates, 3 dead exports.
-Best next move: Fix broken imports before deleting files.
+영향: 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개.
+다음 권장 작업: 파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.
 
-Root: <ROOT>
-Files scanned: 5
-Entrypoints: 1
-Broken imports: 1
-Orphan files: 2
-Dead exports: 3
-Unused imports: 0
-Route entrypoints: 1
-Deletion candidates: 2
+루트: <ROOT>
+스캔한 파일: 5
+진입점: 1
+깨진 import: 1
+고아 파일: 2
+사용되지 않는 export: 3
+사용되지 않는 import: 0
+라우트 진입점: 1
+삭제 후보: 2
 
-Saved report: <REPORT>
+저장된 리포트: <REPORT>
 
-Next steps:
-- Preview cleanup: kratos clean <REPORT>
-- Shareable markdown: kratos report <REPORT> --format md
+다음 단계:
+- 정리 미리보기: kratos clean <REPORT>
+- 공유용 Markdown: kratos report <REPORT> --format md
 
-Broken imports:
+깨진 import:
 - src/lib/broken.ts -> ./missing-helper
 
-Top cleanup candidates:
-- src/components/DeadWidget.tsx (confidence 0.92, Component-like module has no inbound references.)
-- src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
+상위 정리 후보:
+- src/components/DeadWidget.tsx (신뢰도 0.92, 컴포넌트로 보이는 모듈에 참조가 없습니다.)
+- src/lib/broken.ts (신뢰도 0.88, 모듈에 참조가 없고 진입점으로 취급되지 않습니다.)
 
-Orphan files:
+고아 파일:
 - src/components/DeadWidget.tsx
 - src/lib/broken.ts
 
-Dead exports:
+사용되지 않는 export:
 - src/components/DeadWidget.tsx#DeadWidget
 - src/lib/broken.ts#brokenFeature
 - src/lib/math.ts#multiply
 
-Route entrypoints:
+라우트 진입점:
 - pages/home.tsx (next-pages-route)

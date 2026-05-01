@@ -33,17 +33,19 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     let scan = run_cli(&["scan", project_root.to_str().expect("path should be utf8")]);
     assert!(scan.status.success());
     let scan_stdout = String::from_utf8_lossy(&scan.stdout);
-    assert!(scan_stdout.contains("Kratos scan complete."));
+    assert!(scan_stdout.contains("Kratos 스캔 완료."));
     assert!(scan_stdout.contains(
-        "Impact: 6 actionable findings: 1 broken import, 2 cleanup candidates, 3 dead exports."
+        "영향: 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개."
     ));
-    assert!(scan_stdout.contains("Best next move: Fix broken imports before deleting files."));
-    assert!(scan_stdout.contains("Files scanned: 5"));
-    assert!(scan_stdout.contains("Broken imports: 1"));
-    assert!(scan_stdout.contains("Route entrypoints: 1"));
-    assert!(scan_stdout.contains("Deletion candidates: 2"));
-    assert!(scan_stdout.contains("Next steps:"));
-    assert!(scan_stdout.contains("Top cleanup candidates:"));
+    assert!(
+        scan_stdout.contains("다음 권장 작업: 파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.")
+    );
+    assert!(scan_stdout.contains("스캔한 파일: 5"));
+    assert!(scan_stdout.contains("깨진 import: 1"));
+    assert!(scan_stdout.contains("라우트 진입점: 1"));
+    assert!(scan_stdout.contains("삭제 후보: 2"));
+    assert!(scan_stdout.contains("다음 단계:"));
+    assert!(scan_stdout.contains("상위 정리 후보:"));
     assert!(scan_stdout.contains("- src/components/DeadWidget.tsx"));
     assert!(report_path.exists());
 
@@ -55,11 +57,11 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     ]);
     assert!(report.status.success());
     let report_stdout = String::from_utf8_lossy(&report.stdout);
-    assert!(report_stdout.contains("# Kratos Report"));
-    assert!(report_stdout.contains("## Impact"));
-    assert!(report_stdout.contains("- Route entrypoints: 1"));
-    assert!(report_stdout.contains("## Broken imports"));
-    assert!(report_stdout.contains("## Route entrypoints"));
+    assert!(report_stdout.contains("# Kratos 리포트"));
+    assert!(report_stdout.contains("## 영향"));
+    assert!(report_stdout.contains("- 라우트 진입점: 1"));
+    assert!(report_stdout.contains("## 깨진 import"));
+    assert!(report_stdout.contains("## 라우트 진입점"));
     assert!(report_stdout.contains("DeadWidget"));
 
     let clean = run_cli(&["clean", report_path.to_str().expect("path should be utf8")]);
@@ -192,7 +194,7 @@ fn unknown_flags_and_surplus_positionals_match_js_baseline() {
         ],
     );
     assert!(report.status.success());
-    assert!(String::from_utf8_lossy(&report.stdout).contains("Kratos report."));
+    assert!(String::from_utf8_lossy(&report.stdout).contains("Kratos 리포트."));
 
     let clean = run_cli_in_dir(&project_root, &["clean", "--bogus"]);
     assert!(clean.status.success());
@@ -302,7 +304,7 @@ fn report_json_accepts_arbitrary_json_and_empty_or_missing_format_falls_back_to_
         ],
     );
     assert!(bare_format.status.success());
-    assert!(String::from_utf8_lossy(&bare_format.stdout).contains("Kratos report."));
+    assert!(String::from_utf8_lossy(&bare_format.stdout).contains("Kratos 리포트."));
 
     let empty_inline_format = run_cli_in_dir(
         &project_root,
@@ -313,11 +315,11 @@ fn report_json_accepts_arbitrary_json_and_empty_or_missing_format_falls_back_to_
         ],
     );
     assert!(empty_inline_format.status.success());
-    assert!(String::from_utf8_lossy(&empty_inline_format.stdout).contains("Kratos report."));
+    assert!(String::from_utf8_lossy(&empty_inline_format.stdout).contains("Kratos 리포트."));
 }
 
 #[test]
-fn report_markdown_uses_undefined_for_missing_generated_at() {
+fn report_markdown_uses_korean_fallback_for_missing_generated_at() {
     let project_root = copy_demo_app("cli-report-md-missing-generated");
     let report_path = project_root.join("report-no-generated.json");
     std::fs::write(
@@ -337,7 +339,7 @@ fn report_markdown_uses_undefined_for_missing_generated_at() {
     );
 
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("- Generated: undefined"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("- 생성 시각: 정의되지 않음"));
 }
 
 #[test]
@@ -360,7 +362,7 @@ fn report_summary_and_markdown_accept_future_schema_versions() {
         ],
     );
     assert!(summary.status.success());
-    assert!(String::from_utf8_lossy(&summary.stdout).contains("Kratos report."));
+    assert!(String::from_utf8_lossy(&summary.stdout).contains("Kratos 리포트."));
 
     let markdown = run_cli_in_dir(
         &project_root,
@@ -372,15 +374,18 @@ fn report_summary_and_markdown_accept_future_schema_versions() {
         ],
     );
     assert!(markdown.status.success());
-    assert!(String::from_utf8_lossy(&markdown.stdout).contains("# Kratos Report"));
+    assert!(String::from_utf8_lossy(&markdown.stdout).contains("# Kratos 리포트"));
 }
 
 #[test]
 fn report_incomplete_future_schema_fails_fast() {
     let project_root = copy_demo_app("cli-report-incomplete-future-schema");
     let report_path = project_root.join("report-v3-min.json");
-    std::fs::write(&report_path, "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\"}}\n")
-        .expect("report should write");
+    std::fs::write(
+        &report_path,
+        "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\"}}\n",
+    )
+    .expect("report should write");
 
     let summary = run_cli_in_dir(
         &project_root,
@@ -425,10 +430,7 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
 
     let dry_run = run_cli_in_dir(
         &project_root,
-        &[
-            "clean",
-            report_path.to_str().expect("path should be utf8"),
-        ],
+        &["clean", report_path.to_str().expect("path should be utf8")],
     );
     assert!(dry_run.status.success());
     let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
@@ -515,7 +517,7 @@ fn empty_inline_boolean_flags_stay_falsey_like_js() {
     );
     assert!(scan.status.success());
     let scan_stdout = String::from_utf8_lossy(&scan.stdout);
-    assert!(scan_stdout.contains("Kratos scan complete."));
+    assert!(scan_stdout.contains("Kratos 스캔 완료."));
     assert!(!scan_stdout.trim_start().starts_with('{'));
 
     let prepare_report = run_cli_in_dir(&project_root, &["scan"]);
