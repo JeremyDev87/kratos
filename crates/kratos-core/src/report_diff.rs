@@ -129,41 +129,38 @@ pub fn format_diff_summary(
     after_report_path: &Path,
 ) -> KratosResult<String> {
     let mut lines = vec![
-        "Kratos diff complete.".to_string(),
+        "Kratos diff 완료.".to_string(),
         String::new(),
-        format!("Before: {}", path_to_string(before_report_path)),
-        format!("After: {}", path_to_string(after_report_path)),
+        format!("이전: {}", path_to_string(before_report_path)),
+        format!("이후: {}", path_to_string(after_report_path)),
         String::new(),
     ];
 
     lines.extend(render_summary_line(
-        "Broken imports",
+        "깨진 import",
         &diff.summary.broken_imports,
     ));
+    lines.extend(render_summary_line("고아 파일", &diff.summary.orphan_files));
     lines.extend(render_summary_line(
-        "Orphan files",
-        &diff.summary.orphan_files,
-    ));
-    lines.extend(render_summary_line(
-        "Dead exports",
+        "사용되지 않는 export",
         &diff.summary.dead_exports,
     ));
     lines.extend(render_summary_line(
-        "Unused imports",
+        "사용되지 않는 import",
         &diff.summary.unused_imports,
     ));
     lines.extend(render_summary_line(
-        "Route entrypoints",
+        "라우트 진입점",
         &diff.summary.route_entrypoints,
     ));
     lines.extend(render_summary_line(
-        "Deletion candidates",
+        "삭제 후보",
         &diff.summary.deletion_candidates,
     ));
 
     lines.push(String::new());
     lines.push(format!(
-        "Totals: introduced {}, resolved {}, persisted {}",
+        "합계: 새로 발생 {}, 해결됨 {}, 유지됨 {}",
         diff.summary.totals.introduced, diff.summary.totals.resolved, diff.summary.totals.persisted
     ));
 
@@ -171,7 +168,7 @@ pub fn format_diff_summary(
         && diff.summary.totals.resolved == 0
         && diff.summary.totals.persisted == 0
     {
-        lines.push("No finding changes.".to_string());
+        lines.push("변경된 항목이 없습니다.".to_string());
     }
 
     Ok(lines.join("\n"))
@@ -183,22 +180,22 @@ pub fn format_diff_markdown(
     after_report_path: &Path,
 ) -> KratosResult<String> {
     let mut lines = vec![
-        "# Kratos Diff".to_string(),
+        "# Kratos Diff 결과".to_string(),
         String::new(),
-        format!("- Before: {}", path_to_string(before_report_path)),
-        format!("- After: {}", path_to_string(after_report_path)),
+        format!("- 이전: {}", path_to_string(before_report_path)),
+        format!("- 이후: {}", path_to_string(after_report_path)),
         String::new(),
     ];
 
     push_markdown_finding_diff(
         &mut lines,
-        "Broken imports",
+        "깨진 import",
         &diff.findings.broken_imports,
         |item| format!("{} -> `{}`", path_to_string(&item.file), item.source),
     );
     push_markdown_finding_diff(
         &mut lines,
-        "Orphan files",
+        "고아 파일",
         &diff.findings.orphan_files,
         |item| {
             format!(
@@ -210,17 +207,17 @@ pub fn format_diff_markdown(
     );
     push_markdown_finding_diff(
         &mut lines,
-        "Dead exports",
+        "사용되지 않는 export",
         &diff.findings.dead_exports,
         |item| format!("{} -> `{}`", path_to_string(&item.file), item.export_name),
     );
     push_markdown_finding_diff(
         &mut lines,
-        "Unused imports",
+        "사용되지 않는 import",
         &diff.findings.unused_imports,
         |item| {
             format!(
-                "{} -> `{}` from `{}`",
+                "{} -> `{}` (출처: `{}`)",
                 path_to_string(&item.file),
                 item.local,
                 item.source
@@ -229,7 +226,7 @@ pub fn format_diff_markdown(
     );
     push_markdown_finding_diff(
         &mut lines,
-        "Route entrypoints",
+        "라우트 진입점",
         &diff.findings.route_entrypoints,
         |item| {
             format!(
@@ -241,13 +238,13 @@ pub fn format_diff_markdown(
     );
     push_markdown_finding_diff(
         &mut lines,
-        "Deletion candidates",
+        "삭제 후보",
         &diff.findings.deletion_candidates,
         |item| {
             format!(
-                "{} ({}, confidence {})",
+                "{} ({}, 신뢰도 {})",
                 path_to_string(&item.file),
-                item.reason,
+                display_known_reason(&item.reason),
                 item.confidence
             )
         },
@@ -360,9 +357,24 @@ fn all_group_keys<T>(
         .collect()
 }
 
+fn display_known_reason(reason: &str) -> &str {
+    match reason {
+        "Component-like module has no inbound references." => {
+            "컴포넌트로 보이는 모듈에 참조가 없습니다."
+        }
+        "Route-like module is not connected to any router entry." => {
+            "라우트로 보이는 모듈이 어떤 라우터 진입점에도 연결되지 않았습니다."
+        }
+        "Module has no inbound references and is not treated as an entrypoint." => {
+            "모듈에 참조가 없고 진입점으로 취급되지 않습니다."
+        }
+        other => other,
+    }
+}
+
 fn render_summary_line(label: &str, counts: &FindingDiffCounts) -> Vec<String> {
     vec![format!(
-        "{label}: introduced {}, resolved {}, persisted {}",
+        "{label}: 새로 발생 {}, 해결됨 {}, 유지됨 {}",
         counts.introduced, counts.resolved, counts.persisted
     )]
 }
@@ -380,9 +392,9 @@ fn push_markdown_finding_diff<T>(
     lines.push(format!("## {title}"));
     lines.push(String::new());
 
-    push_markdown_change_group(lines, "Introduced", &diff.introduced, &render);
-    push_markdown_change_group(lines, "Resolved", &diff.resolved, &render);
-    push_markdown_change_group(lines, "Persisted", &diff.persisted, &render);
+    push_markdown_change_group(lines, "새로 발생", &diff.introduced, &render);
+    push_markdown_change_group(lines, "해결됨", &diff.resolved, &render);
+    push_markdown_change_group(lines, "유지됨", &diff.persisted, &render);
 }
 
 fn push_markdown_change_group<T>(
@@ -394,7 +406,7 @@ fn push_markdown_change_group<T>(
     lines.push(format!("### {label} ({})", items.len()));
 
     if items.is_empty() {
-        lines.push("- None".to_string());
+        lines.push("- 없음".to_string());
         lines.push(String::new());
         return;
     }
@@ -510,7 +522,11 @@ fn orphan_file_key(item: &OrphanFileFinding, report_root: &Path) -> String {
 }
 
 fn dead_export_key(item: &DeadExportFinding, report_root: &Path) -> String {
-    format!("{}|{}", finding_file_key(&item.file, report_root), item.export_name)
+    format!(
+        "{}|{}",
+        finding_file_key(&item.file, report_root),
+        item.export_name
+    )
 }
 
 fn unused_import_key(item: &UnusedImportFinding, report_root: &Path) -> String {
