@@ -243,8 +243,8 @@ fn analyze_project_surfaces_suppressed_findings_in_summary_and_formatters() {
     assert_eq!(report.findings.deletion_candidates.len(), 0);
     assert_eq!(report.summary.suppressed_findings, 3);
     assert_eq!(parsed.summary.suppressed_findings, 3);
-    assert!(summary.contains("Suppressed findings: 3"));
-    assert!(markdown.contains("- Suppressed findings: 3"));
+    assert!(summary.contains("숨김 처리된 항목: 3"));
+    assert!(markdown.contains("- 숨김 처리된 항목: 3"));
     assert!(
         serialized.contains("\"suppressedFindings\": 3"),
         "expected optional suppressed findings field in serialized report"
