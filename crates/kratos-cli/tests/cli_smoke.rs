@@ -10,7 +10,7 @@ fn root_help_matches_expected_shape() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "Kratos\n죽은 코드를 가차 없이 제거합니다.\n\n사용법:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n명령:\n  scan    코드베이스를 분석하고 최신 리포트를 저장합니다.\n  report  저장된 리포트를 summary, json, markdown 형식으로 출력합니다.\n  diff    저장된 두 리포트를 비교합니다.\n  clean   삭제 후보를 표시하거나 --apply로 삭제합니다.\n"
+        "Kratos\n죽은 코드를 가차 없이 제거합니다.\n\n사용법:\n  kratos scan [root] [--output path] [--no-write] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n명령:\n  scan    코드베이스를 분석하고 최신 리포트를 저장합니다.\n  report  저장된 리포트를 summary, json, markdown 형식으로 출력합니다.\n  diff    저장된 두 리포트를 비교합니다.\n  clean   삭제 후보를 표시하거나 --apply로 삭제합니다.\n"
     );
 }
 
@@ -32,7 +32,7 @@ fn unknown_command_returns_help_and_exit_code_one() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "알 수 없는 명령: nope\n\nKratos\n죽은 코드를 가차 없이 제거합니다.\n\n사용법:\n  kratos scan [root] [--output path] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n명령:\n  scan    코드베이스를 분석하고 최신 리포트를 저장합니다.\n  report  저장된 리포트를 summary, json, markdown 형식으로 출력합니다.\n  diff    저장된 두 리포트를 비교합니다.\n  clean   삭제 후보를 표시하거나 --apply로 삭제합니다.\n"
+        "알 수 없는 명령: nope\n\nKratos\n죽은 코드를 가차 없이 제거합니다.\n\n사용법:\n  kratos scan [root] [--output path] [--no-write] [--json]\n  kratos report [report-path-or-root] [--format summary|json|md]\n  kratos diff [before-report-path-or-root] [after-report-path-or-root] [--format summary|json|md]\n  kratos clean [report-path-or-root] [--apply] [--min-confidence value]\n\n명령:\n  scan    코드베이스를 분석하고 최신 리포트를 저장합니다.\n  report  저장된 리포트를 summary, json, markdown 형식으로 출력합니다.\n  diff    저장된 두 리포트를 비교합니다.\n  clean   삭제 후보를 표시하거나 --apply로 삭제합니다.\n"
     );
 }
 
@@ -56,6 +56,9 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(scan_stdout.contains("라우트 진입점: 1"));
     assert!(scan_stdout.contains("삭제 후보: 2"));
     assert!(scan_stdout.contains("다음 단계:"));
+    assert!(scan_stdout.contains("쓰기 안내: 기본 리포트 경로 .kratos/latest-report.json는 체크아웃을 dirty하게 만들 수 있습니다. .gitignore에 .kratos/를 추가하거나 --output 또는 --no-write를 사용하세요."));
+    assert!(scan_stdout.contains("npx로 실행 중이라면: npx @jeremyfellaz/kratos clean"));
+    assert!(scan_stdout.contains("npx로 실행 중이라면: npx @jeremyfellaz/kratos report"));
     assert!(scan_stdout.contains("상위 정리 후보:"));
     assert!(scan_stdout.contains("- src/components/DeadWidget.tsx"));
     assert!(scan_stdout.contains(
@@ -103,6 +106,85 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(clean_stdout.contains("미리보기:"));
     assert!(clean_stdout.contains("export function DeadWidget()"));
     assert!(clean_stdout.contains("삭제하려면 --apply로 다시 실행하세요."));
+}
+
+#[test]
+fn scan_no_write_prints_human_summary_without_creating_default_report() {
+    let project_root = copy_demo_app("cli-no-write");
+    let report_path = project_root.join(".kratos/latest-report.json");
+
+    let scan = run_cli_in_dir(&project_root, &["scan", "--no-write"]);
+
+    assert!(scan.status.success());
+    let scan_stdout = String::from_utf8_lossy(&scan.stdout);
+    assert!(scan_stdout.contains("Kratos 스캔 완료."));
+    assert!(scan_stdout.contains(
+        "영향: 즉시 수정 대상 1개: 깨진 import 1개. 자동 정리 후보 2개: 삭제 후보 2개. 수동 검토 대상 3개: 사용되지 않는 export 3개."
+    ));
+    assert!(scan_stdout.contains("리포트 저장: --no-write 때문에 파일을 생성하지 않았습니다."));
+    assert!(scan_stdout.contains(
+        "리포트가 필요한 clean/report 작업은 기본 쓰기 모드로 다시 실행하거나 --output path를 지정하세요."
+    ));
+    assert!(!scan_stdout.contains("정리 미리보기: kratos clean"));
+    assert!(!scan_stdout.contains("공유용 Markdown: kratos report"));
+    assert!(!report_path.exists());
+    assert!(!project_root.join(".kratos").exists());
+}
+
+#[test]
+fn scan_no_write_rejects_output_flag() {
+    let project_root = copy_demo_app("cli-no-write-output-conflict");
+
+    let scan = run_cli_in_dir(
+        &project_root,
+        &["scan", "--no-write", "--output", "report.json"],
+    );
+
+    assert_eq!(scan.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&scan.stderr).contains(
+        "Kratos 실행 실패: Config error: --output and --no-write cannot be used together"
+    ));
+    assert!(!project_root.join("report.json").exists());
+    assert!(!project_root.join(".kratos").exists());
+
+    let empty_output = run_cli_in_dir(&project_root, &["scan", "--no-write", "--output="]);
+    assert_eq!(empty_output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&empty_output.stderr).contains(
+        "Kratos 실행 실패: Config error: --output and --no-write cannot be used together"
+    ));
+}
+
+#[test]
+fn scan_json_stdout_stays_json_only() {
+    let project_root = copy_demo_app("cli-json-only");
+
+    let scan = run_cli_in_dir(&project_root, &["scan", "--json"]);
+
+    assert!(scan.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&scan.stdout).expect("scan json should parse");
+    assert_eq!(report["summary"]["filesScanned"], 5);
+    let scan_stdout = String::from_utf8_lossy(&scan.stdout);
+    assert!(!scan_stdout.contains("쓰기 안내"));
+    assert!(!scan_stdout.contains("npx로 실행 중이라면"));
+}
+
+#[test]
+fn scan_json_no_write_stays_json_only_without_creating_default_report() {
+    let project_root = copy_demo_app("cli-json-no-write");
+    let report_path = project_root.join(".kratos/latest-report.json");
+
+    let scan = run_cli_in_dir(&project_root, &["scan", "--json", "--no-write"]);
+
+    assert!(scan.status.success());
+    let report: serde_json::Value =
+        serde_json::from_slice(&scan.stdout).expect("scan json should parse");
+    assert_eq!(report["summary"]["filesScanned"], 5);
+    let scan_stdout = String::from_utf8_lossy(&scan.stdout);
+    assert!(!scan_stdout.contains("쓰기 안내"));
+    assert!(!scan_stdout.contains("npx로 실행 중이라면"));
+    assert!(!report_path.exists());
+    assert!(!project_root.join(".kratos").exists());
 }
 
 #[test]
