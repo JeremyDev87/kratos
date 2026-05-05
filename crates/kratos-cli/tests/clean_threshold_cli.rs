@@ -25,6 +25,11 @@ fn clean_uses_config_threshold_and_flag_override() {
     assert!(overridden_stdout.contains("삭제 대상: 1"));
     assert!(overridden_stdout.contains("신뢰도 기준 미달로 건너뛴 대상: 1"));
     assert!(overridden_stdout.contains("high-confidence.ts"));
+    assert!(overridden_stdout.contains("신뢰도: 0.96"));
+    assert!(overridden_stdout.contains("사유: high confidence candidate"));
+    assert!(overridden_stdout.contains("상태: 존재함"));
+    assert!(overridden_stdout.contains("미리보기:"));
+    assert!(overridden_stdout.contains("export const high = true;"));
     assert!(overridden_stdout.contains("mid-confidence.ts"));
 
     let apply = run_cli_in_dir(
@@ -37,6 +42,32 @@ fn clean_uses_config_threshold_and_flag_override() {
     assert!(apply_stdout.contains("건너뛴 파일: 1"));
     assert!(!project_root.join("high-confidence.ts").exists());
     assert!(project_root.join("mid-confidence.ts").exists());
+}
+
+#[test]
+fn clean_dry_run_renders_excerpts_markers_and_separate_skipped_sections() {
+    let project_root = temp_dir("clean-threshold-cli-preview");
+    write_clean_preview_fixture(&project_root);
+
+    let output = run_cli_in_dir(&project_root, &["clean", "--min-confidence", "0.9"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(stdout.contains("삭제 대상: 3"));
+    assert!(stdout.contains("- src/live.ts"));
+    assert!(stdout.contains("신뢰도: 0.96"));
+    assert!(stdout.contains("사유: live candidate"));
+    assert!(stdout.contains("상태: 존재함"));
+    assert!(stdout.contains("export const live = true;"));
+    assert!(stdout.contains("- src/missing.ts"));
+    assert!(stdout.contains("상태: 없음"));
+    assert!(stdout.contains("[missing file]"));
+    assert!(stdout.contains("- src/binary.bin"));
+    assert!(stdout.contains("[binary file]"));
+    assert!(stdout.contains("신뢰도 기준 미달로 건너뛴 대상: 1"));
+    assert!(stdout.contains("src/low-confidence.ts"));
+    assert!(stdout.contains("사용할 수 없어 건너뛴 대상: 1"));
+    assert!(stdout.contains("outside-candidate.ts"));
 }
 
 #[test]
@@ -240,6 +271,94 @@ fn write_clean_threshold_fixture(
                     "file": project_root.join("mid-confidence.ts"),
                     "reason": "mid confidence candidate",
                     "confidence": mid_confidence,
+                    "safe": true,
+                }
+            ],
+        },
+        "graph": {
+            "modules": [],
+        },
+    });
+
+    std::fs::write(
+        project_root.join(".kratos/latest-report.json"),
+        serde_json::to_string_pretty(&report).expect("report should serialize"),
+    )
+    .expect("report should write");
+}
+
+fn write_clean_preview_fixture(project_root: &std::path::Path) {
+    std::fs::create_dir_all(project_root.join(".kratos")).expect("report dir should exist");
+    std::fs::create_dir_all(project_root.join("src")).expect("source dir should exist");
+
+    std::fs::write(
+        project_root.join("src/live.ts"),
+        "export const live = true;\n",
+    )
+    .expect("live file should write");
+    std::fs::write(project_root.join("src/binary.bin"), [0, 159, 146, 150])
+        .expect("binary file should write");
+
+    let outside_candidate = project_root.with_file_name(format!(
+        "{}-outside-candidate.ts",
+        project_root
+            .file_name()
+            .expect("project root should have file name")
+            .to_string_lossy()
+    ));
+
+    let report = json!({
+        "schemaVersion": 3,
+        "generatedAt": "2026-04-21T00:00:00Z",
+        "project": {
+            "root": project_root,
+            "configPath": null,
+        },
+        "summary": {
+            "filesScanned": 4,
+            "entrypoints": 0,
+            "brokenImports": 0,
+            "orphanFiles": 0,
+            "deadExports": 0,
+            "unusedImports": 0,
+            "routeEntrypoints": 0,
+            "deletionCandidates": 5,
+        },
+        "findings": {
+            "brokenImports": [],
+            "orphanFiles": [],
+            "deadExports": [],
+            "unusedImports": [],
+            "routeEntrypoints": [],
+            "deletionCandidates": [
+                {
+                    "file": project_root.join("src/live.ts"),
+                    "reason": "live candidate",
+                    "confidence": 0.96,
+                    "safe": true,
+                },
+                {
+                    "file": project_root.join("src/missing.ts"),
+                    "reason": "missing candidate",
+                    "confidence": 0.95,
+                    "safe": true,
+                },
+                {
+                    "file": project_root.join("src/binary.bin"),
+                    "reason": "binary candidate",
+                    "confidence": 0.94,
+                    "safe": true,
+                },
+                {
+                    "file": project_root.join("src/low-confidence.ts"),
+                    "reason": "low candidate",
+                    "confidence": 0.20,
+                    "safe": true,
+                },
+                {
+                    "file": outside_candidate,
+                    "reason": "outside candidate",
+                    "confidence": 0.93,
                     "safe": true,
                 }
             ],
