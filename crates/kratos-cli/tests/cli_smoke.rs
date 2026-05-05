@@ -99,6 +99,9 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(clean.status.success());
     let clean_stdout = String::from_utf8_lossy(&clean.stdout);
     assert!(clean_stdout.contains("Kratos clean 미리보기입니다."));
+    assert!(clean_stdout.contains("상태: 존재함"));
+    assert!(clean_stdout.contains("미리보기:"));
+    assert!(clean_stdout.contains("export function DeadWidget()"));
     assert!(clean_stdout.contains("삭제하려면 --apply로 다시 실행하세요."));
 }
 
@@ -468,7 +471,7 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
     assert!(dry_run.status.success());
     let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
     assert!(dry_run_stdout.contains("Kratos clean 미리보기입니다."));
-    assert!(dry_run_stdout.contains(&dead_file.display().to_string()));
+    assert!(dry_run_stdout.contains("dead.txt"));
     assert!(dead_file.exists());
 
     let apply = run_cli_in_dir(

@@ -1,8 +1,11 @@
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 
-use kratos_core::clean::{clean_from_report_with_min_confidence, plan_clean_candidates};
+use kratos_core::clean::clean_from_report_with_min_confidence;
+use kratos_core::clean_preview::{build_clean_preview, CleanPreviewItem, CleanPreviewPlan};
 use kratos_core::config::load_clean_min_confidence;
+use kratos_core::model::DeletionCandidateFinding;
 use kratos_core::report::parse_report_json;
 use kratos_core::report_format::display_known_reason;
 use kratos_core::KratosResult;
@@ -41,8 +44,8 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     };
 
     if !args.apply {
-        let plan = plan_clean_candidates(&report, min_confidence)?;
-        write_output(stdout, &format_clean_plan(&plan))?;
+        let plan = build_clean_preview(&report, min_confidence)?;
+        write_output(stdout, &format_clean_preview_plan(&plan, &report.root))?;
         return Ok(0);
     }
 
@@ -129,15 +132,15 @@ fn parse_min_confidence(value: &ParsedFlagValue) -> KratosResult<f32> {
     Ok(parsed)
 }
 
-fn format_clean_plan(plan: &kratos_core::clean::CleanThresholdPlan) -> String {
+fn format_clean_preview_plan(plan: &CleanPreviewPlan, report_root: &Path) -> String {
     let mut lines = vec![
         "Kratos clean 미리보기입니다.".to_string(),
         String::new(),
-        format!("삭제 대상: {}", plan.deletion_targets.len()),
+        format!("삭제 대상: {}", plan.items.len()),
     ];
 
-    for candidate in &plan.deletion_targets {
-        lines.push(format_candidate_line(candidate));
+    for item in &plan.items {
+        lines.extend(format_preview_item(item));
     }
 
     if !plan.threshold_skipped_targets.is_empty() {
@@ -148,7 +151,19 @@ fn format_clean_plan(plan: &kratos_core::clean::CleanThresholdPlan) -> String {
         ));
 
         for candidate in &plan.threshold_skipped_targets {
-            lines.push(format_candidate_line(candidate));
+            lines.push(format_candidate_line(candidate, report_root));
+        }
+    }
+
+    if !plan.unavailable_targets.is_empty() {
+        lines.push(String::new());
+        lines.push(format!(
+            "사용할 수 없어 건너뛴 대상: {}",
+            plan.unavailable_targets.len()
+        ));
+
+        for candidate in &plan.unavailable_targets {
+            lines.push(format_candidate_line(candidate, report_root));
         }
     }
 
@@ -157,11 +172,44 @@ fn format_clean_plan(plan: &kratos_core::clean::CleanThresholdPlan) -> String {
     lines.join("\n")
 }
 
-fn format_candidate_line(candidate: &kratos_core::model::DeletionCandidateFinding) -> String {
+fn format_preview_item(item: &CleanPreviewItem) -> Vec<String> {
+    let exists_state = if item.exists { "존재함" } else { "없음" };
+    let mut lines = vec![
+        format!("- {}", item.relative_path),
+        format!("  신뢰도: {:.2}", item.confidence),
+        format!("  사유: {}", display_known_reason(&item.reason)),
+        format!("  상태: {exists_state}"),
+        "  미리보기:".to_string(),
+    ];
+
+    if item.preview_excerpt.is_empty() {
+        lines.push("    [empty file]".to_string());
+    } else {
+        lines.extend(
+            item.preview_excerpt
+                .lines()
+                .map(|line| format!("    {line}")),
+        );
+    }
+
+    lines
+}
+
+fn format_candidate_line(candidate: &DeletionCandidateFinding, report_root: &Path) -> String {
     format!(
         "- {} (신뢰도 {:.2}, {})",
-        candidate.file.display(),
+        relative_path(&candidate.file, report_root),
         candidate.confidence,
         display_known_reason(&candidate.reason)
     )
+}
+
+fn relative_path(file: &Path, report_root: &Path) -> String {
+    file.strip_prefix(report_root)
+        .map(path_to_forward_slashes)
+        .unwrap_or_else(|_| path_to_forward_slashes(file))
+}
+
+fn path_to_forward_slashes(path: impl AsRef<Path>) -> String {
+    path.as_ref().to_string_lossy().replace('\\', "/")
 }
