@@ -7,7 +7,7 @@ use crate::model::{
     BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, OrphanFileFinding,
     OrphanKind, ReportV2, RouteEntrypointFinding, UnusedImportFinding,
 };
-use crate::report::{entrypoint_kind_to_string, path_to_string};
+use crate::report::{entrypoint_kind_to_string, export_kind_to_string, path_to_string};
 use crate::{KratosError, KratosResult};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -474,6 +474,12 @@ fn serialize_dead_export(item: &DeadExportFinding) -> Value {
     json!({
         "file": path_to_string(&item.file),
         "exportName": item.export_name,
+        "exportKind": export_kind_to_string(&item.export_kind),
+        "reason": item.reason,
+        "confidence": round_confidence(item.confidence),
+        "importedByCount": item.imported_by_count,
+        "usedExportNames": item.used_export_names,
+        "hasNamespaceOrUnknownUsage": item.has_namespace_or_unknown_usage,
     })
 }
 
@@ -584,6 +590,6 @@ fn orphan_kind_to_string(kind: &OrphanKind) -> &'static str {
     }
 }
 
-fn round_confidence(value: f32) -> f32 {
-    (value * 100.0).round() / 100.0
+fn round_confidence(value: f32) -> f64 {
+    ((value as f64) * 100.0).round() / 100.0
 }

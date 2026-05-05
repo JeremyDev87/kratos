@@ -146,6 +146,7 @@ pub enum ExportKind {
     Reexport,
     ReexportAll,
     ReexportNamespace,
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -249,10 +250,16 @@ pub enum OrphanKind {
     RouteModule,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DeadExportFinding {
     pub file: PathBuf,
     pub export_name: String,
+    pub export_kind: ExportKind,
+    pub reason: String,
+    pub confidence: f32,
+    pub imported_by_count: usize,
+    pub used_export_names: Vec<String>,
+    pub has_namespace_or_unknown_usage: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

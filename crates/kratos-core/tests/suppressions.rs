@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 
 use kratos_core::analyze::analyze_project;
 use kratos_core::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, FindingSet,
-    ImportKind, OrphanFileFinding, OrphanKind, RouteEntrypointFinding, UnusedImportFinding,
+    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportKind,
+    FindingSet, ImportKind, OrphanFileFinding, OrphanKind, RouteEntrypointFinding,
+    UnusedImportFinding,
 };
 use kratos_core::report::{parse_report_json, serialize_report_pretty};
 use kratos_core::report_format::{format_markdown_report, format_summary_report};
@@ -85,10 +86,22 @@ fn apply_suppressions_matches_exact_fields_and_counts_each_finding_once() {
             DeadExportFinding {
                 file: root.join("src/dead.ts"),
                 export_name: "default".to_string(),
+                export_kind: ExportKind::Default,
+                reason: "Known importers do not reference this export.".to_string(),
+                confidence: 0.91,
+                imported_by_count: 1,
+                used_export_names: vec!["helper".to_string()],
+                has_namespace_or_unknown_usage: false,
             },
             DeadExportFinding {
                 file: root.join("src/dead.ts"),
                 export_name: "helper".to_string(),
+                export_kind: ExportKind::Named,
+                reason: "Known importers do not reference this export.".to_string(),
+                confidence: 0.9,
+                imported_by_count: 1,
+                used_export_names: vec!["default".to_string()],
+                has_namespace_or_unknown_usage: false,
             },
         ],
         unused_imports: vec![

@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use kratos_core::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, FindingSet,
-    ImportKind, ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2, RouteEntrypointFinding,
-    SummaryCounts, UnusedImportFinding,
+    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportKind,
+    FindingSet, ImportKind, ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2,
+    RouteEntrypointFinding, SummaryCounts, UnusedImportFinding,
 };
 use kratos_core::report_diff::{
     diff_reports, format_diff_json, format_diff_markdown, format_diff_summary,
@@ -435,6 +435,90 @@ fn diff_reports_treat_deletion_candidate_metadata_changes_as_real_changes() {
     );
 }
 
+#[test]
+fn diff_reports_keep_dead_export_evidence_out_of_identity_key() {
+    let before_dead_export = dead_export_with_evidence(
+        "/repo/before/src/dead.ts",
+        "helper",
+        ExportKind::Named,
+        "Old evidence.",
+        0.42,
+        0,
+        vec![],
+        false,
+    );
+    let after_dead_export = dead_export_with_evidence(
+        "/repo/after/src/dead.ts",
+        "helper",
+        ExportKind::Reexport,
+        "New evidence.",
+        0.9,
+        2,
+        vec!["used".to_string()],
+        true,
+    );
+    let before = report_v2(
+        "/repo/before",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![],
+            vec![],
+            vec![before_dead_export],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        vec![],
+    );
+    let after = report_v2(
+        "/repo/after",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![],
+            vec![],
+            vec![after_dead_export.clone()],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        vec![],
+    );
+
+    let diff = diff_reports(&before, &after);
+
+    assert_eq!(diff.summary.dead_exports.introduced, 0);
+    assert_eq!(diff.summary.dead_exports.resolved, 0);
+    assert_eq!(diff.summary.dead_exports.persisted, 1);
+    assert_eq!(
+        diff.findings.dead_exports.persisted,
+        vec![after_dead_export]
+    );
+
+    let json = format_diff_json(
+        &diff,
+        &PathBuf::from("/tmp/before-report.json"),
+        &PathBuf::from("/tmp/after-report.json"),
+    )
+    .expect("json should format");
+    let value: Value = serde_json::from_str(&json).expect("diff json should parse");
+    assert_eq!(
+        value["findings"]["deadExports"]["persisted"][0]["exportKind"],
+        Value::from("reexport")
+    );
+    assert_eq!(
+        value["findings"]["deadExports"]["persisted"][0]["confidence"],
+        Value::from(0.9)
+    );
+    assert_eq!(
+        value["findings"]["deadExports"]["persisted"][0]["usedExportNames"],
+        Value::from(vec!["used"])
+    );
+}
+
 fn report_v2(
     root: &str,
     config_path: Option<&str>,
@@ -522,9 +606,37 @@ fn orphan_file(file: &str, kind: OrphanKind, reason: &str, confidence: f32) -> O
 }
 
 fn dead_export(file: &str, export_name: &str) -> DeadExportFinding {
+    dead_export_with_evidence(
+        file,
+        export_name,
+        ExportKind::Named,
+        "Known importers do not reference this export.",
+        0.9,
+        1,
+        Vec::new(),
+        false,
+    )
+}
+
+fn dead_export_with_evidence(
+    file: &str,
+    export_name: &str,
+    export_kind: ExportKind,
+    reason: &str,
+    confidence: f32,
+    imported_by_count: usize,
+    used_export_names: Vec<String>,
+    has_namespace_or_unknown_usage: bool,
+) -> DeadExportFinding {
     DeadExportFinding {
         file: PathBuf::from(file),
         export_name: export_name.to_string(),
+        export_kind,
+        reason: reason.to_string(),
+        confidence,
+        imported_by_count,
+        used_export_names,
+        has_namespace_or_unknown_usage,
     }
 }
 

@@ -242,6 +242,13 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
                 dead_exports.push(DeadExportFinding {
                     file: module.file_path.clone(),
                     export_name: exported.name.clone(),
+                    export_kind: exported.kind.clone(),
+                    reason: dead_export_reason(module, &export_usage).to_string(),
+                    confidence: dead_export_confidence(module, &export_usage),
+                    imported_by_count: module.imported_by.len(),
+                    used_export_names: export_usage.used_names.iter().cloned().collect(),
+                    has_namespace_or_unknown_usage: export_usage.uses_namespace
+                        || export_usage.uses_unknown,
                 });
             }
         }
@@ -337,6 +344,30 @@ fn summarize_export_usage(module: &ModuleRecord) -> ExportUsage {
         used_names,
         uses_namespace,
         uses_unknown,
+    }
+}
+
+fn dead_export_reason(module: &ModuleRecord, export_usage: &ExportUsage) -> &'static str {
+    if module.imported_by.is_empty() {
+        "Module has no inbound references, so the export is not reached by known imports."
+    } else if export_usage.used_names.is_empty() {
+        "Known importers do not reference any concrete export names from this module."
+    } else {
+        "Known importers reference other concrete export names from this module."
+    }
+}
+
+fn dead_export_confidence(module: &ModuleRecord, export_usage: &ExportUsage) -> f32 {
+    if export_usage.uses_namespace || export_usage.uses_unknown {
+        return 0.0;
+    }
+
+    if module.imported_by.is_empty() {
+        0.84
+    } else if export_usage.used_names.is_empty() {
+        0.86
+    } else {
+        0.9
     }
 }
 

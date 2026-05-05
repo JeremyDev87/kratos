@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kratos_core::analyze::analyze_project;
+use kratos_core::model::ExportKind;
 use kratos_core::report::{
     format_markdown_report, format_summary_report, parse_report_json, serialize_report_pretty,
     validate_report_version,
@@ -375,11 +376,48 @@ fn report_v2_rejects_invalid_required_enum_values() {
         "modules": []
       }
     }"#;
+    let invalid_dead_export_kind = r#"{
+      "schemaVersion": 2,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "project": {
+        "root": "/tmp/kratos",
+        "configPath": null
+      },
+      "summary": {
+        "filesScanned": 0,
+        "entrypoints": 0,
+        "brokenImports": 0,
+        "orphanFiles": 0,
+        "deadExports": 1,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [
+          {
+            "file": "/tmp/kratos/src/dead.ts",
+            "exportName": "helper",
+            "exportKind": 123
+          }
+        ],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": []
+      }
+    }"#;
 
     let import_error =
         parse_report_json(invalid_import_kind).expect_err("invalid import kind should fail");
     let orphan_error =
         parse_report_json(invalid_orphan_kind).expect_err("invalid orphan kind should fail");
+    let export_error =
+        parse_report_json(invalid_dead_export_kind).expect_err("invalid export kind should fail");
 
     assert!(
         import_error
@@ -392,6 +430,16 @@ fn report_v2_rejects_invalid_required_enum_values() {
             .to_string()
             .contains("findings.orphanFiles[0].kind"),
         "expected orphan kind error, got: {orphan_error}"
+    );
+    assert!(
+        export_error
+            .to_string()
+            .contains("findings.deadExports[0].exportKind"),
+        "expected export kind error path, got: {export_error}"
+    );
+    assert!(
+        export_error.to_string().contains("invalid export kind"),
+        "expected export kind invalid-type message, got: {export_error}"
     );
 }
 
@@ -439,6 +487,83 @@ fn legacy_report_parses_into_renderable_v2_report() {
     serialize_report_pretty(&parsed).expect("legacy report should serialize");
     format_summary_report(&parsed, report_path).expect("legacy report should format as summary");
     format_markdown_report(&parsed, report_path).expect("legacy report should format as markdown");
+}
+
+#[test]
+fn report_v2_dead_exports_include_evidence_and_legacy_shape_still_parses() {
+    let legacy_dead_export_report = r#"{
+      "schemaVersion": 2,
+      "generatedAt": "2026-04-19T00:00:00Z",
+      "project": {
+        "root": "/tmp/kratos",
+        "configPath": null
+      },
+      "summary": {
+        "filesScanned": 1,
+        "entrypoints": 0,
+        "brokenImports": 0,
+        "orphanFiles": 0,
+        "deadExports": 1,
+        "unusedImports": 0,
+        "routeEntrypoints": 0,
+        "deletionCandidates": 0
+      },
+      "findings": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [
+          {
+            "file": "/tmp/kratos/src/dead.ts",
+            "exportName": "helper"
+          }
+        ],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      },
+      "graph": {
+        "modules": [
+          {
+            "file": "/tmp/kratos/src/dead.ts",
+            "relativePath": "src/dead.ts",
+            "entrypointKind": null,
+            "importedByCount": 0,
+            "importCount": 0,
+            "exportCount": 1
+          }
+        ]
+      }
+    }"#;
+
+    let parsed =
+        parse_report_json(legacy_dead_export_report).expect("legacy dead export should parse");
+    let finding = &parsed.findings.dead_exports[0];
+
+    assert_eq!(finding.file, PathBuf::from("/tmp/kratos/src/dead.ts"));
+    assert_eq!(finding.export_name, "helper");
+    assert_eq!(finding.export_kind, ExportKind::Unknown);
+    assert_eq!(finding.reason, "");
+    assert_eq!(finding.confidence, 0.0);
+    assert_eq!(finding.imported_by_count, 0);
+    assert!(finding.used_export_names.is_empty());
+    assert!(!finding.has_namespace_or_unknown_usage);
+
+    let serialized = serialize_report_pretty(&parsed).expect("report should serialize");
+    let serialized_value: Value =
+        serde_json::from_str(&serialized).expect("serialized report should be valid JSON");
+    let serialized_finding = &serialized_value["findings"]["deadExports"][0];
+    assert_eq!(serialized_finding["exportKind"], Value::from("unknown"));
+    assert_eq!(serialized_finding["reason"], Value::from(""));
+    assert_eq!(serialized_finding["confidence"], Value::from(0.0));
+    assert_eq!(serialized_finding["importedByCount"], Value::from(0));
+    assert_eq!(
+        serialized_finding["usedExportNames"],
+        Value::from(Vec::<Value>::new())
+    );
+    assert_eq!(
+        serialized_finding["hasNamespaceOrUnknownUsage"],
+        Value::from(false)
+    );
 }
 
 #[test]
