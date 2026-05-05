@@ -210,11 +210,18 @@ pub fn parse_cli_options(
 }
 
 pub fn canonicalize_scan_args(raw_args: &[String]) -> KratosResult<Vec<String>> {
-    let parsed = parse_cli_options(raw_args, &["output"], &["json"]);
+    let parsed = parse_cli_options(raw_args, &["output"], &["json", "no-write"]);
     let mut args = Vec::new();
+    let no_write = is_enabled_boolean_flag(parsed.flags.get("no-write"));
 
     if let Some(root) = parsed.positionals.first() {
         args.push(root.clone());
+    }
+
+    if no_write && parsed.flags.contains_key("output") {
+        return Err(KratosError::Config(
+            "--output and --no-write cannot be used together".to_string(),
+        ));
     }
 
     if let Some(value) = parsed.flags.get("output").and_then(flag_value_as_string) {
@@ -230,6 +237,10 @@ pub fn canonicalize_scan_args(raw_args: &[String]) -> KratosResult<Vec<String>> 
 
     if is_enabled_boolean_flag(parsed.flags.get("json")) {
         args.push("--json".to_string());
+    }
+
+    if no_write {
+        args.push("--no-write".to_string());
     }
 
     Ok(args)
