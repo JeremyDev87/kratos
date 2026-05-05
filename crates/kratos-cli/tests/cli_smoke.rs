@@ -46,7 +46,7 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     let scan_stdout = String::from_utf8_lossy(&scan.stdout);
     assert!(scan_stdout.contains("Kratos 스캔 완료."));
     assert!(scan_stdout.contains(
-        "영향: 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개."
+        "영향: 즉시 수정 대상 1개: 깨진 import 1개. 자동 정리 후보 2개: 삭제 후보 2개. 수동 검토 대상 3개: 사용되지 않는 export 3개."
     ));
     assert!(
         scan_stdout.contains("다음 권장 작업: 파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.")
@@ -58,7 +58,27 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(scan_stdout.contains("다음 단계:"));
     assert!(scan_stdout.contains("상위 정리 후보:"));
     assert!(scan_stdout.contains("- src/components/DeadWidget.tsx"));
+    assert!(scan_stdout.contains(
+        "설정 안내: kratos.config.json의 keepPatterns 또는 suppressions로 의도된 공개 API와 보존 파일을 고정하세요."
+    ));
+    assert!(!scan_stdout.contains("pages/home.tsx (next-pages-route)"));
     assert!(report_path.exists());
+
+    let summary_report = run_cli(&[
+        "report",
+        report_path.to_str().expect("path should be utf8"),
+        "--format",
+        "summary",
+    ]);
+    assert!(summary_report.status.success());
+    let summary_stdout = String::from_utf8_lossy(&summary_report.stdout);
+    assert!(summary_stdout.contains(
+        "영향: 즉시 수정 대상 1개: 깨진 import 1개. 자동 정리 후보 2개: 삭제 후보 2개. 수동 검토 대상 3개: 사용되지 않는 export 3개."
+    ));
+    assert!(summary_stdout.contains(
+        "설정 안내: kratos.config.json의 keepPatterns 또는 suppressions로 의도된 공개 API와 보존 파일을 고정하세요."
+    ));
+    assert!(!summary_stdout.contains("pages/home.tsx (next-pages-route)"));
 
     let report = run_cli(&[
         "report",

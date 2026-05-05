@@ -1,6 +1,6 @@
 Kratos 리포트.
 
-영향: 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개.
+영향: 즉시 수정 대상 1개: 깨진 import 1개. 자동 정리 후보 2개: 삭제 후보 2개. 수동 검토 대상 3개: 사용되지 않는 export 3개.
 다음 권장 작업: 파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.
 
 루트: <ROOT>
@@ -18,6 +18,7 @@ Kratos 리포트.
 다음 단계:
 - 정리 미리보기: kratos clean <REPORT>
 - 공유용 Markdown: kratos report <REPORT> --format md
+- 설정 안내: kratos.config.json의 keepPatterns 또는 suppressions로 의도된 공개 API와 보존 파일을 고정하세요.
 
 깨진 import:
 - src/lib/broken.ts -> ./missing-helper
@@ -27,13 +28,9 @@ Kratos 리포트.
 - src/lib/broken.ts (신뢰도 0.88, 모듈에 참조가 없고 진입점으로 취급되지 않습니다.)
 
 고아 파일:
-- src/components/DeadWidget.tsx
-- src/lib/broken.ts
+- 정리 후보와 동일한 파일 2개는 위 목록에서 확인하세요.
 
 사용되지 않는 export:
 - src/components/DeadWidget.tsx#DeadWidget
 - src/lib/broken.ts#brokenFeature
 - src/lib/math.ts#multiply
-
-라우트 진입점:
-- pages/home.tsx (next-pages-route)

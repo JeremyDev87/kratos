@@ -1,6 +1,6 @@
 # Kratos 리포트
 
-> 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개.
+> 즉시 수정 대상 1개: 깨진 import 1개. 자동 정리 후보 2개: 삭제 후보 2개. 수동 검토 대상 3개: 사용되지 않는 export 3개.
 
 - 생성 시각: <GENERATED_AT>
 - 루트: <ROOT>
@@ -19,10 +19,11 @@
 
 ## 영향
 
-- 조치할 항목 6개: 깨진 import 1개, 정리 후보 2개, 사용되지 않는 export 3개.
+- 즉시 수정 대상 1개: 깨진 import 1개. 자동 정리 후보 2개: 삭제 후보 2개. 수동 검토 대상 3개: 사용되지 않는 export 3개.
 - 다음 권장 작업: 파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.
 - 정리 미리보기: `kratos clean <REPORT>`
 - Markdown 갱신: `kratos report <REPORT> --format md`
+- 설정 안내: `kratos.config.json`의 `keepPatterns` 또는 `suppressions`로 의도된 공개 API와 보존 파일을 고정하세요.
 
 ## 깨진 import
 
