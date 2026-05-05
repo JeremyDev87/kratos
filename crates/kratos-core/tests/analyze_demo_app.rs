@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kratos_core::analyze::analyze_project;
-use kratos_core::model::{EntrypointKind, OrphanKind};
+use kratos_core::model::{EntrypointKind, ExportKind, OrphanKind};
 
 #[test]
 fn analyze_demo_app_matches_expected_graph_and_findings() {
@@ -54,7 +54,18 @@ fn analyze_demo_app_matches_expected_graph_and_findings() {
         .findings
         .dead_exports
         .iter()
-        .map(|item| (item.file.clone(), item.export_name.clone()))
+        .map(|item| {
+            (
+                item.file.clone(),
+                item.export_name.clone(),
+                item.export_kind.clone(),
+                item.reason.clone(),
+                item.confidence,
+                item.imported_by_count,
+                item.used_export_names.clone(),
+                item.has_namespace_or_unknown_usage,
+            )
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         dead_exports,
@@ -62,12 +73,36 @@ fn analyze_demo_app_matches_expected_graph_and_findings() {
             (
                 demo_root.join("src/components/DeadWidget.tsx"),
                 "DeadWidget".to_string(),
+                ExportKind::Named,
+                "Module has no inbound references, so the export is not reached by known imports."
+                    .to_string(),
+                0.84,
+                0,
+                Vec::<String>::new(),
+                false,
             ),
             (
                 demo_root.join("src/lib/broken.ts"),
                 "brokenFeature".to_string(),
+                ExportKind::Named,
+                "Module has no inbound references, so the export is not reached by known imports."
+                    .to_string(),
+                0.84,
+                0,
+                Vec::<String>::new(),
+                false,
             ),
-            (demo_root.join("src/lib/math.ts"), "multiply".to_string(),),
+            (
+                demo_root.join("src/lib/math.ts"),
+                "multiply".to_string(),
+                ExportKind::Named,
+                "Known importers reference other concrete export names from this module."
+                    .to_string(),
+                0.9,
+                1,
+                vec!["sum".to_string()],
+                false,
+            ),
         ]
     );
 
@@ -239,6 +274,18 @@ export const helper = 1;
         project.root().join("app/page.tsx")
     );
     assert_eq!(report.findings.dead_exports[0].export_name, "helper");
+    assert_eq!(
+        report.findings.dead_exports[0].export_kind,
+        ExportKind::Named
+    );
+    assert_eq!(
+        report.findings.dead_exports[0].reason,
+        "Module has no inbound references, so the export is not reached by known imports."
+    );
+    assert_eq!(report.findings.dead_exports[0].confidence, 0.84);
+    assert_eq!(report.findings.dead_exports[0].imported_by_count, 0);
+    assert!(report.findings.dead_exports[0].used_export_names.is_empty());
+    assert!(!report.findings.dead_exports[0].has_namespace_or_unknown_usage);
 }
 
 #[test]

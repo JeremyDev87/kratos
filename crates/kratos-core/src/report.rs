@@ -4,9 +4,9 @@ use serde_json::{json, Value};
 
 use crate::error::{KratosError, KratosResult};
 use crate::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ImportKind,
-    ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2, RouteEntrypointFinding, SummaryCounts,
-    UnusedImportFinding, REPORT_V2,
+    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportKind,
+    ImportKind, ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2, RouteEntrypointFinding,
+    SummaryCounts, UnusedImportFinding, REPORT_V2,
 };
 
 pub fn validate_report_version(report: &ReportV2) -> KratosResult<()> {
@@ -214,6 +214,12 @@ fn serialize_dead_export(item: &DeadExportFinding) -> Value {
     json!({
         "file": path_to_string(&item.file),
         "exportName": item.export_name,
+        "exportKind": export_kind_to_string(&item.export_kind),
+        "reason": item.reason,
+        "confidence": round_confidence(item.confidence),
+        "importedByCount": item.imported_by_count,
+        "usedExportNames": item.used_export_names,
+        "hasNamespaceOrUnknownUsage": item.has_namespace_or_unknown_usage,
     })
 }
 
@@ -410,9 +416,43 @@ fn parse_dead_exports(value: Option<&Value>) -> Vec<DeadExportFinding> {
     read_array(value)
         .iter()
         .filter_map(|item| {
+            let object = item.as_object()?;
             Some(DeadExportFinding {
-                file: item.get("file")?.as_str()?.into(),
-                export_name: item.get("exportName")?.as_str()?.to_string(),
+                file: object.get("file")?.as_str()?.into(),
+                export_name: object.get("exportName")?.as_str()?.to_string(),
+                export_kind: object
+                    .get("exportKind")
+                    .and_then(Value::as_str)
+                    .and_then(parse_export_kind)
+                    .unwrap_or(ExportKind::Unknown),
+                reason: object
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                confidence: object
+                    .get("confidence")
+                    .and_then(Value::as_f64)
+                    .unwrap_or_default() as f32,
+                imported_by_count: object
+                    .get("importedByCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or_default() as usize,
+                used_export_names: object
+                    .get("usedExportNames")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                has_namespace_or_unknown_usage: object
+                    .get("hasNamespaceOrUnknownUsage")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             })
         })
         .collect()
@@ -439,6 +479,36 @@ fn parse_required_dead_exports(values: &[Value]) -> KratosResult<Vec<DeadExportF
                     &format!("findings.deadExports[{index}].exportName"),
                 )?
                 .to_string(),
+                export_kind: read_optional_export_kind(
+                    object,
+                    "exportKind",
+                    &format!("findings.deadExports[{index}].exportKind"),
+                )?,
+                reason: read_optional_string_owned(
+                    object,
+                    "reason",
+                    &format!("findings.deadExports[{index}].reason"),
+                )?,
+                confidence: read_optional_f64(
+                    object,
+                    "confidence",
+                    &format!("findings.deadExports[{index}].confidence"),
+                )? as f32,
+                imported_by_count: read_optional_usize(
+                    object,
+                    "importedByCount",
+                    &format!("findings.deadExports[{index}].importedByCount"),
+                )?,
+                used_export_names: read_optional_string_vec(
+                    object,
+                    "usedExportNames",
+                    &format!("findings.deadExports[{index}].usedExportNames"),
+                )?,
+                has_namespace_or_unknown_usage: read_optional_bool(
+                    object,
+                    "hasNamespaceOrUnknownUsage",
+                    &format!("findings.deadExports[{index}].hasNamespaceOrUnknownUsage"),
+                )?,
             })
         })
         .collect()
@@ -709,6 +779,17 @@ pub(crate) fn entrypoint_kind_to_string(kind: &EntrypointKind) -> &'static str {
     }
 }
 
+pub(crate) fn export_kind_to_string(kind: &ExportKind) -> &'static str {
+    match kind {
+        ExportKind::Default => "default",
+        ExportKind::Named => "named",
+        ExportKind::Reexport => "reexport",
+        ExportKind::ReexportAll => "reexport-all",
+        ExportKind::ReexportNamespace => "reexport-namespace",
+        ExportKind::Unknown => "unknown",
+    }
+}
+
 fn import_kind_to_string(kind: &ImportKind) -> &'static str {
     match kind {
         ImportKind::Static => "static",
@@ -753,6 +834,18 @@ fn parse_import_kind(value: &str) -> Option<ImportKind> {
         "require" => Some(ImportKind::Require),
         "dynamic" => Some(ImportKind::Dynamic),
         "unknown" => Some(ImportKind::Unknown),
+        _ => None,
+    }
+}
+
+fn parse_export_kind(value: &str) -> Option<ExportKind> {
+    match value {
+        "default" => Some(ExportKind::Default),
+        "named" => Some(ExportKind::Named),
+        "reexport" => Some(ExportKind::Reexport),
+        "reexport-all" => Some(ExportKind::ReexportAll),
+        "reexport-namespace" => Some(ExportKind::ReexportNamespace),
+        "unknown" => Some(ExportKind::Unknown),
         _ => None,
     }
 }
@@ -847,6 +940,87 @@ fn read_optional_usize(
             .ok_or_else(|| KratosError::Json(format!("Report has invalid number `{path}`"))),
         Some(_) => Err(KratosError::Json(format!(
             "Report has invalid number `{path}`"
+        ))),
+    }
+}
+
+fn read_optional_f64(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<f64> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(0.0),
+        Some(Value::Number(number)) => number
+            .as_f64()
+            .ok_or_else(|| KratosError::Json(format!("Report has invalid number `{path}`"))),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid number `{path}`"
+        ))),
+    }
+}
+
+fn read_optional_bool(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<bool> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid boolean `{path}`"
+        ))),
+    }
+}
+
+fn read_optional_string_owned(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<String> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(String::new()),
+        Some(Value::String(value)) => Ok(value.clone()),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid string field `{path}`"
+        ))),
+    }
+}
+
+fn read_optional_string_vec(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<Vec<String>> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| {
+                item.as_str().map(str::to_string).ok_or_else(|| {
+                    KratosError::Json(format!("Report has invalid string `{path}[{index}]`"))
+                })
+            })
+            .collect(),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid array `{path}`"
+        ))),
+    }
+}
+
+fn read_optional_export_kind(
+    value: &serde_json::Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> KratosResult<ExportKind> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(ExportKind::Unknown),
+        Some(Value::String(raw)) => parse_export_kind(raw)
+            .ok_or_else(|| KratosError::Json(format!("Report has invalid export kind `{path}`"))),
+        Some(_) => Err(KratosError::Json(format!(
+            "Report has invalid export kind `{path}`"
         ))),
     }
 }

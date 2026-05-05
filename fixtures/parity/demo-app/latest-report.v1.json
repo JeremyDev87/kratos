@@ -40,15 +40,35 @@
     "deadExports": [
       {
         "file": "<ROOT>/src/components/DeadWidget.tsx",
-        "exportName": "DeadWidget"
+        "exportName": "DeadWidget",
+        "exportKind": "named",
+        "reason": "Module has no inbound references, so the export is not reached by known imports.",
+        "confidence": 0.84,
+        "importedByCount": 0,
+        "usedExportNames": [],
+        "hasNamespaceOrUnknownUsage": false
       },
       {
         "file": "<ROOT>/src/lib/broken.ts",
-        "exportName": "brokenFeature"
+        "exportName": "brokenFeature",
+        "exportKind": "named",
+        "reason": "Module has no inbound references, so the export is not reached by known imports.",
+        "confidence": 0.84,
+        "importedByCount": 0,
+        "usedExportNames": [],
+        "hasNamespaceOrUnknownUsage": false
       },
       {
         "file": "<ROOT>/src/lib/math.ts",
-        "exportName": "multiply"
+        "exportName": "multiply",
+        "exportKind": "named",
+        "reason": "Known importers reference other concrete export names from this module.",
+        "confidence": 0.9,
+        "importedByCount": 1,
+        "usedExportNames": [
+          "sum"
+        ],
+        "hasNamespaceOrUnknownUsage": false
       }
     ],
     "unusedImports": [],
