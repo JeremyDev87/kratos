@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::model::ReportV2;
@@ -43,12 +44,7 @@ pub fn format_summary_report(
         |item| format!("{} -> {}", display_path(report, &item.file), item.source),
     );
     append_deletion_preview(&mut lines, report);
-    append_preview(
-        &mut lines,
-        "고아 파일",
-        &report.findings.orphan_files,
-        |item| display_path(report, &item.file),
-    );
+    append_orphan_preview(&mut lines, report);
     append_preview(
         &mut lines,
         "사용되지 않는 export",
@@ -68,19 +64,6 @@ pub fn format_summary_report(
             )
         },
     );
-    append_preview(
-        &mut lines,
-        "라우트 진입점",
-        &report.findings.route_entrypoints,
-        |item| {
-            format!(
-                "{} ({})",
-                display_path(report, &item.file),
-                entrypoint_kind_to_string(&item.kind)
-            )
-        },
-    );
-
     Ok(lines.join("\n"))
 }
 
@@ -199,39 +182,55 @@ fn impact_summary(report: &ReportV2) -> ImpactSummary {
     let cleanup_candidates = report.summary.deletion_candidates;
     let dead_exports = report.summary.dead_exports;
     let unused_imports = report.summary.unused_imports;
-    let actionable_total = breakages + cleanup_candidates + dead_exports + unused_imports;
+    let fix_candidates = breakages + unused_imports;
 
-    let headline = if actionable_total == 0 {
+    let headline = if fix_candidates == 0 && cleanup_candidates == 0 && dead_exports == 0 {
         format!(
-            "스캔한 파일 {}개에서 조치할 항목이 없습니다.",
+            "스캔한 파일 {}개에서 자동 정리 후보와 수동 검토 대상이 없습니다.",
             report.summary.files_scanned
         )
     } else {
         let mut parts = Vec::new();
-        if breakages > 0 {
-            parts.push(count_label(breakages, "깨진 import"));
+        if fix_candidates > 0 {
+            let mut fix_parts = Vec::new();
+            if breakages > 0 {
+                fix_parts.push(count_label(breakages, "깨진 import"));
+            }
+            if unused_imports > 0 {
+                fix_parts.push(count_label(unused_imports, "사용되지 않는 import"));
+            }
+            parts.push(format!(
+                "즉시 수정 대상 {}개: {}",
+                fix_candidates,
+                fix_parts.join(", ")
+            ));
         }
         if cleanup_candidates > 0 {
-            parts.push(count_label(cleanup_candidates, "정리 후보"));
+            parts.push(format!(
+                "자동 정리 후보 {}개: {}",
+                cleanup_candidates,
+                count_label(cleanup_candidates, "삭제 후보")
+            ));
         }
         if dead_exports > 0 {
-            parts.push(count_label(dead_exports, "사용되지 않는 export"));
-        }
-        if unused_imports > 0 {
-            parts.push(count_label(unused_imports, "사용되지 않는 import"));
+            parts.push(format!(
+                "수동 검토 대상 {}개: {}",
+                dead_exports,
+                count_label(dead_exports, "사용되지 않는 export")
+            ));
         }
 
-        format!("조치할 항목 {}개: {}.", actionable_total, parts.join(", "))
+        format!("{}.", parts.join(". "))
     };
 
     let best_next_move = if breakages > 0 {
         "파일을 삭제하기 전에 깨진 import를 먼저 수정하세요.".to_string()
     } else if cleanup_candidates > 0 {
         "정리 미리보기를 실행하고 신뢰도 높은 미사용 파일을 제거하세요.".to_string()
-    } else if dead_exports > 0 {
-        "사용되지 않는 export를 제거하거나 의도된 공개 API인지 확인하세요.".to_string()
     } else if unused_imports > 0 {
         "사용되지 않는 import를 제거해 불필요한 의존성을 줄이세요.".to_string()
+    } else if dead_exports > 0 {
+        "사용되지 않는 export는 삭제 후보가 아니므로 공개 API 여부를 수동 검토하세요.".to_string()
     } else {
         "향후 diff 기준선으로 JSON 리포트를 보관하세요.".to_string()
     };
@@ -258,6 +257,12 @@ fn append_next_steps(lines: &mut Vec<String>, report: &ReportV2, report_path: &P
     lines.push(format!(
         "- 공유용 Markdown: kratos report {report_arg} --format md"
     ));
+    if needs_config_guidance(report) {
+        lines.push(
+            "- 설정 안내: kratos.config.json의 keepPatterns 또는 suppressions로 의도된 공개 API와 보존 파일을 고정하세요."
+                .to_string(),
+        );
+    }
 }
 
 fn push_markdown_impact(lines: &mut Vec<String>, report: &ReportV2, report_path: &Path) {
@@ -274,6 +279,12 @@ fn push_markdown_impact(lines: &mut Vec<String>, report: &ReportV2, report_path:
     lines.push(format!(
         "- Markdown 갱신: `kratos report {report_arg} --format md`"
     ));
+    if needs_config_guidance(report) {
+        lines.push(
+            "- 설정 안내: `kratos.config.json`의 `keepPatterns` 또는 `suppressions`로 의도된 공개 API와 보존 파일을 고정하세요."
+                .to_string(),
+        );
+    }
     lines.push(String::new());
 }
 
@@ -300,6 +311,56 @@ fn append_deletion_preview(lines: &mut Vec<String>, report: &ReportV2) {
             report.findings.deletion_candidates.len() - 5
         ));
     }
+}
+
+fn append_orphan_preview(lines: &mut Vec<String>, report: &ReportV2) {
+    if report.findings.orphan_files.is_empty() {
+        return;
+    }
+
+    let deletion_files = report
+        .findings
+        .deletion_candidates
+        .iter()
+        .map(|item| item.file.as_path())
+        .collect::<HashSet<_>>();
+    let visible_orphans = report
+        .findings
+        .orphan_files
+        .iter()
+        .filter(|item| !deletion_files.contains(item.file.as_path()))
+        .collect::<Vec<_>>();
+    let omitted_count = report.findings.orphan_files.len() - visible_orphans.len();
+
+    lines.push(String::new());
+    lines.push("고아 파일:".to_string());
+
+    if visible_orphans.is_empty() {
+        lines.push(format!(
+            "- 정리 후보와 동일한 파일 {}개는 위 목록에서 확인하세요.",
+            omitted_count
+        ));
+        return;
+    }
+
+    for item in visible_orphans.iter().take(5) {
+        lines.push(format!("- {}", display_path(report, &item.file)));
+    }
+
+    if visible_orphans.len() > 5 {
+        lines.push(format!("- ...외 {}개", visible_orphans.len() - 5));
+    }
+    if omitted_count > 0 {
+        lines.push(format!(
+            "- 정리 후보와 중복된 {}개는 위 목록에서 확인하세요.",
+            omitted_count
+        ));
+    }
+}
+
+fn needs_config_guidance(report: &ReportV2) -> bool {
+    report.config_path.is_none()
+        && (report.summary.deletion_candidates > 0 || report.summary.dead_exports > 0)
 }
 
 fn display_path(report: &ReportV2, path: &Path) -> String {
