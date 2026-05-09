@@ -303,6 +303,113 @@ jobs:
           path: ${{ steps.addon_pack.outputs.tarball }}
           if-no-files-found: error
 
+  build-root-package:
+    name: Build Root Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - resolve
+      - verify-node
+      - verify-rust
+    env:
+      NPM_CONFIG_CACHE: .npm-cache
+
+    outputs:
+      alreadyPublished: ${{ steps.npm_state.outputs.already_published }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+
+    steps:
+      - name: Checkout tagged release ref
+        uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-package-lock
+          fi
+
+      - name: Verify package version matches tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          if [ "v$package_version" != "$RELEASE_TAG" ]; then
+            echo "Tag $RELEASE_TAG does not match package.json version v$package_version"
+            exit 1
+          fi
+
+      - name: Check whether this version already exists on npm
+        id: npm_state
+        shell: bash
+        run: |
+          package_name=$(node -p "require('./package.json').name")
+          if npm view "${package_name}@${{ needs.resolve.outputs.version }}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+          else
+            lookup_state=$(node ./scripts/classify-npm-lookup-error.mjs /tmp/npm-view-error.txt)
+
+            if [ "$lookup_state" = "not-found" ]; then
+              echo "already_published=false" >> "$GITHUB_OUTPUT"
+            else
+              cat /tmp/npm-view-error.txt
+              exit 1
+            fi
+          fi
+
+      - name: Pack release tarball
+        id: pack
+        shell: bash
+        run: |
+          tarball=$(npm pack --cache ./.npm-cache)
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke install packed root package
+        shell: bash
+        run: |
+          smoke_dir=$(mktemp -d)
+          pushd "$smoke_dir" >/dev/null
+          npm init -y >/dev/null 2>&1
+          npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}" --no-package-lock
+          ./node_modules/.bin/kratos --help >/dev/null
+          popd >/dev/null
+
+      - name: Upload root npm tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: root-npm-tarball
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+
+  approve-release-publish:
+    name: Approve Release Publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - resolve
+      - verify-node
+      - verify-rust
+      - build-native-artifacts
+      - build-root-package
+    environment:
+      name: release
+
+    steps:
+      - name: Record approved release target
+        run: echo "Release publish approved for ${{ needs.resolve.outputs.tag }}."
+
   publish-addon-packages:
     name: Publish Addon Packages
     runs-on: ubuntu-latest
@@ -311,6 +418,7 @@ jobs:
       - resolve
       - verify-node
       - build-native-artifacts
+      - approve-release-publish
     env:
       NPM_CONFIG_CACHE: .npm-cache
 
@@ -449,14 +557,11 @@ jobs:
     timeout-minutes: 20
     needs:
       - resolve
-      - verify-node
-      - verify-rust
+      - build-root-package
+      - approve-release-publish
       - publish-addon-packages
     env:
       NPM_CONFIG_CACHE: .npm-cache
-
-    outputs:
-      tarball: ${{ steps.pack.outputs.tarball }}
 
     steps:
       - name: Checkout tagged release ref
@@ -471,67 +576,11 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install --no-package-lock
-          fi
-
-      - name: Verify package version matches tag
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
-        run: |
-          package_version=$(node -p "require('./package.json').version")
-          if [ "v$package_version" != "$RELEASE_TAG" ]; then
-            echo "Tag $RELEASE_TAG does not match package.json version v$package_version"
-            exit 1
-          fi
-
-      - name: Check whether this version already exists on npm
-        id: npm_state
-        shell: bash
-        run: |
-          package_name=$(node -p "require('./package.json').name")
-          if npm view "${package_name}@${{ needs.resolve.outputs.version }}" version --registry=https://registry.npmjs.org >/tmp/npm-version.txt 2>/tmp/npm-view-error.txt; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-          else
-            lookup_state=$(node ./scripts/classify-npm-lookup-error.mjs /tmp/npm-view-error.txt)
-
-            if [ "$lookup_state" = "not-found" ]; then
-              echo "already_published=false" >> "$GITHUB_OUTPUT"
-            else
-              cat /tmp/npm-view-error.txt
-              exit 1
-            fi
-          fi
-
-      - name: Pack release tarball
-        id: pack
-        shell: bash
-        run: |
-          tarball=$(npm pack --cache ./.npm-cache)
-          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
-
-      - name: Smoke install packed root package
-        shell: bash
-        run: |
-          smoke_dir=$(mktemp -d)
-          pushd "$smoke_dir" >/dev/null
-          npm init -y >/dev/null 2>&1
-          npm install "$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}" --no-package-lock
-          ./node_modules/.bin/kratos --help >/dev/null
-          popd >/dev/null
-
-      - name: Upload root npm tarball
-        uses: actions/upload-artifact@v7
+      - name: Download root npm tarball
+        uses: actions/download-artifact@v7
         with:
           name: root-npm-tarball
-          path: ${{ steps.pack.outputs.tarball }}
-          if-no-files-found: error
+          path: root-package
 
       - name: Detect npm auth mode
         id: auth
@@ -546,10 +595,12 @@ jobs:
           fi
 
       - name: Publish to npm with trusted publishing
-        if: ${{ steps.auth.outputs.mode == 'trusted' && steps.npm_state.outputs.already_published != 'true' }}
+        if: ${{ steps.auth.outputs.mode == 'trusted' && needs.build-root-package.outputs.alreadyPublished != 'true' }}
         shell: bash
+        env:
+          ROOT_TARBALL: root-package/${{ needs.build-root-package.outputs.tarball }}
         run: |
-          if npm publish "./${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+          if npm publish "$ROOT_TARBALL" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
             exit 0
           fi
 
@@ -563,12 +614,13 @@ jobs:
           fi
 
       - name: Publish to npm with token fallback
-        if: ${{ steps.auth.outputs.mode == 'token' && steps.npm_state.outputs.already_published != 'true' }}
+        if: ${{ steps.auth.outputs.mode == 'token' && needs.build-root-package.outputs.alreadyPublished != 'true' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          ROOT_TARBALL: root-package/${{ needs.build-root-package.outputs.tarball }}
         shell: bash
         run: |
-          if npm publish "./${{ steps.pack.outputs.tarball }}" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
+          if npm publish "$ROOT_TARBALL" --access public --tag "${{ needs.resolve.outputs.npmDistTag }}" >/tmp/npm-publish.txt 2>/tmp/npm-publish-error.txt; then
             exit 0
           fi
 
@@ -582,7 +634,7 @@ jobs:
           fi
 
       - name: Skip npm publish when version already exists
-        if: ${{ steps.npm_state.outputs.already_published == 'true' }}
+        if: ${{ needs.build-root-package.outputs.alreadyPublished == 'true' }}
         run: echo "npm package version already published, skipping publish step."
 
   github-release:
@@ -592,6 +644,8 @@ jobs:
     needs:
       - resolve
       - build-native-artifacts
+      - build-root-package
+      - approve-release-publish
       - publish-addon-packages
       - publish-root-package
     env:
