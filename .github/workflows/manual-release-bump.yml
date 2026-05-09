@@ -84,10 +84,39 @@ jobs:
       - name: Verify changed files before package verification
         shell: bash
         run: |
-          changed_files=$(git diff --name-only)
-          if [ "$changed_files" != "package.json" ]; then
+          mapfile -t changed_files < <(git diff --name-only)
+          missing_files=()
+          unexpected_files=()
+
+          for required_file in package.json Cargo.toml; do
+            found=false
+            for changed_file in "${changed_files[@]}"; do
+              if [ "$changed_file" = "$required_file" ]; then
+                found=true
+                break
+              fi
+            done
+
+            if [ "$found" != "true" ]; then
+              missing_files+=("$required_file")
+            fi
+          done
+
+          for changed_file in "${changed_files[@]}"; do
+            case "$changed_file" in
+              package.json|Cargo.toml|Cargo.lock) ;;
+              *) unexpected_files+=("$changed_file") ;;
+            esac
+          done
+
+          if [ "${#missing_files[@]}" -gt 0 ] || [ "${#unexpected_files[@]}" -gt 0 ]; then
             echo "Unexpected changed files:"
-            printf '%s\n' "$changed_files"
+            printf 'Changed files:\n'
+            printf '%s\n' "${changed_files[@]}"
+            printf 'Missing required files:\n'
+            printf '%s\n' "${missing_files[@]}"
+            printf 'Unexpected files:\n'
+            printf '%s\n' "${unexpected_files[@]}"
             exit 1
           fi
 
@@ -97,10 +126,39 @@ jobs:
       - name: Verify changed files after package verification
         shell: bash
         run: |
-          changed_files=$(git diff --name-only)
-          if [ "$changed_files" != "package.json" ]; then
+          mapfile -t changed_files < <(git diff --name-only)
+          missing_files=()
+          unexpected_files=()
+
+          for required_file in package.json Cargo.toml; do
+            found=false
+            for changed_file in "${changed_files[@]}"; do
+              if [ "$changed_file" = "$required_file" ]; then
+                found=true
+                break
+              fi
+            done
+
+            if [ "$found" != "true" ]; then
+              missing_files+=("$required_file")
+            fi
+          done
+
+          for changed_file in "${changed_files[@]}"; do
+            case "$changed_file" in
+              package.json|Cargo.toml|Cargo.lock) ;;
+              *) unexpected_files+=("$changed_file") ;;
+            esac
+          done
+
+          if [ "${#missing_files[@]}" -gt 0 ] || [ "${#unexpected_files[@]}" -gt 0 ]; then
             echo "Unexpected changed files after verification:"
-            printf '%s\n' "$changed_files"
+            printf 'Changed files:\n'
+            printf '%s\n' "${changed_files[@]}"
+            printf 'Missing required files:\n'
+            printf '%s\n' "${missing_files[@]}"
+            printf 'Unexpected files:\n'
+            printf '%s\n' "${unexpected_files[@]}"
             exit 1
           fi
 
@@ -163,35 +221,96 @@ jobs:
             pr_diff_files=$(git diff --name-only \
               "refs/remotes/origin/${{ inputs.base_ref }}...refs/remotes/origin/${{ steps.meta.outputs.branch }}")
 
-            if [ "$pr_diff_files" != "package.json" ]; then
-              echo "Existing PR $pr_url is not a package.json-only bump."
+            mapfile -t pr_diff_file_list <<< "$pr_diff_files"
+            missing_files=()
+            unexpected_files=()
+
+            for required_file in package.json Cargo.toml; do
+              found=false
+              for changed_file in "${pr_diff_file_list[@]}"; do
+                if [ "$changed_file" = "$required_file" ]; then
+                  found=true
+                  break
+                fi
+              done
+
+              if [ "$found" != "true" ]; then
+                missing_files+=("$required_file")
+              fi
+            done
+
+            for changed_file in "${pr_diff_file_list[@]}"; do
+              case "$changed_file" in
+                package.json|Cargo.toml|Cargo.lock) ;;
+                *) unexpected_files+=("$changed_file") ;;
+              esac
+            done
+
+            if [ "${#missing_files[@]}" -gt 0 ] || [ "${#unexpected_files[@]}" -gt 0 ]; then
+              echo "Existing PR $pr_url is not a package/Cargo version-only bump."
               printf '%s\n' "$pr_diff_files"
+              printf 'Missing required files:\n'
+              printf '%s\n' "${missing_files[@]}"
+              printf 'Unexpected files:\n'
+              printf '%s\n' "${unexpected_files[@]}"
               exit 1
             fi
 
             package_json_file=$(mktemp)
+            cargo_toml_file=$(mktemp)
+            cargo_lock_file=$(mktemp)
             git show "refs/remotes/origin/${{ steps.meta.outputs.branch }}:package.json" > "$package_json_file"
+            git show "refs/remotes/origin/${{ steps.meta.outputs.branch }}:Cargo.toml" > "$cargo_toml_file"
+            git show "refs/remotes/origin/${{ steps.meta.outputs.branch }}:Cargo.lock" > "$cargo_lock_file"
             node --input-type=module -e "
               import fs from 'node:fs';
+              import {
+                readCargoLockWorkspacePackageVersions,
+                readCargoWorkspacePackageVersion,
+              } from './scripts/bump-release-version.mjs';
 
               const expectedVersion = process.env.EXPECTED_VERSION;
               const pkg = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+              const cargoVersion = readCargoWorkspacePackageVersion(
+                fs.readFileSync(process.argv[2], 'utf8'),
+              );
+              const cargoLockVersions = readCargoLockWorkspacePackageVersions(
+                fs.readFileSync(process.argv[3], 'utf8'),
+              );
               const mismatchedOptionalDeps = Object.entries(pkg.optionalDependencies ?? {})
                 .filter(([, version]) => version !== expectedVersion)
                 .map(([name, version]) => name + '@' + version);
+              const mismatchedCargoLockPackages = cargoLockVersions
+                .filter(({ version }) => version !== expectedVersion)
+                .map(({ name, version }) => name + '@' + version);
 
-              if (pkg.version !== expectedVersion || mismatchedOptionalDeps.length > 0) {
+              if (
+                pkg.version !== expectedVersion ||
+                cargoVersion !== expectedVersion ||
+                cargoLockVersions.length === 0 ||
+                mismatchedOptionalDeps.length > 0 ||
+                mismatchedCargoLockPackages.length > 0
+              ) {
                 console.error('Existing PR head does not match expected bump version ' + expectedVersion + '.');
                 if (pkg.version !== expectedVersion) {
                   console.error('package.json version: ' + pkg.version);
                 }
+                if (cargoVersion !== expectedVersion) {
+                  console.error('Cargo.toml workspace package version: ' + cargoVersion);
+                }
+                if (cargoLockVersions.length === 0) {
+                  console.error('Cargo.lock workspace package entries were not found.');
+                }
                 if (mismatchedOptionalDeps.length > 0) {
                   console.error('optionalDependencies mismatches: ' + mismatchedOptionalDeps.join(', '));
                 }
+                if (mismatchedCargoLockPackages.length > 0) {
+                  console.error('Cargo.lock mismatches: ' + mismatchedCargoLockPackages.join(', '));
+                }
                 process.exit(1);
               }
-            " "$package_json_file"
-            rm -f "$package_json_file"
+            " "$package_json_file" "$cargo_toml_file" "$cargo_lock_file"
+            rm -f "$package_json_file" "$cargo_toml_file" "$cargo_lock_file"
           fi
 
           if [ -n "$pr_number" ] && [ "$has_skip_changelog" != "true" ]; then
@@ -217,7 +336,7 @@ jobs:
           fi
 
           git switch -C "${{ steps.meta.outputs.branch }}"
-          git add package.json
+          git add package.json Cargo.toml Cargo.lock
           git commit -m "${{ steps.meta.outputs.title }}"
           git push "${lease_args[@]}" -u origin "${{ steps.meta.outputs.branch }}"
 
@@ -252,6 +371,7 @@ jobs:
 
           - root package version을 \`${{ steps.meta.outputs.currentVersion }}\`에서 \`${{ steps.meta.outputs.version }}\`으로 올렸습니다.
           - root \`optionalDependencies\`의 native addon 버전도 모두 \`${{ steps.meta.outputs.version }}\`으로 맞췄습니다.
+          - Cargo workspace package version과 \`Cargo.lock\` workspace package metadata도 \`${{ steps.meta.outputs.version }}\`으로 맞췄습니다.
 
           ## 검증 / Verification
 
