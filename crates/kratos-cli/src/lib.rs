@@ -31,6 +31,10 @@ fn run(
     let argv = &args[1..];
 
     match command.as_str() {
+        "--version" | "-V" => {
+            commands::write_output(stdout, &format!("kratos {}", package_version()))?;
+            Ok(0)
+        }
         "--help" | "-h" | "help" => {
             commands::write_output(stdout, &commands::format_root_help())?;
             Ok(0)
@@ -41,4 +45,16 @@ fn run(
             Ok(1)
         }
     }
+}
+
+fn package_version() -> String {
+    serde_json::from_str::<serde_json::Value>(include_str!("../../../package.json"))
+        .ok()
+        .and_then(|manifest| {
+            manifest
+                .get("version")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
 }

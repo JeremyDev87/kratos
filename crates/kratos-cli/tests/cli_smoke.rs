@@ -15,6 +15,30 @@ fn root_help_matches_expected_shape() {
 }
 
 #[test]
+fn root_version_flags_print_package_version() {
+    for flag in ["--version", "-V"] {
+        let output = run_cli(&[flag]);
+
+        assert!(output.status.success(), "{flag} should exit successfully");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            format!("kratos {}\n", package_version())
+        );
+        assert!(output.stderr.is_empty(), "{flag} should not print stderr");
+    }
+}
+
+fn package_version() -> String {
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../../package.json")).expect("valid package.json");
+    manifest
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .expect("package.json version")
+        .to_string()
+}
+
+#[test]
 fn command_help_matches_korean_policy() {
     let output = run_cli(&["clean", "--help"]);
 
