@@ -34,6 +34,9 @@ static QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CleanOutcome {
+    /// Compatibility count for paths moved out of the code tree. The file bytes
+    /// remain under `quarantined_files`; this does not mean a physical unlink.
+    pub deleted_files: usize,
     pub quarantined_files: Vec<PathBuf>,
     pub skipped_files: usize,
     pub failed_files: Vec<CleanFailure>,
@@ -141,6 +144,7 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
 
     if !apply {
         return Ok(CleanOutcome {
+            deleted_files: 0,
             quarantined_files: Vec::new(),
             skipped_files: report.findings.deletion_candidates.len(),
             failed_files: Vec::new(),
@@ -282,6 +286,7 @@ where
     G: FnMut(&Path),
 {
     let mut outcome = CleanOutcome {
+        deleted_files: 0,
         quarantined_files: Vec::new(),
         skipped_files: plan.threshold_skipped_targets.len(),
         failed_files: Vec::new(),
@@ -309,6 +314,7 @@ where
             &mut after_quarantine_verification,
         ) {
             QuarantineOutcome::Quarantined(quarantined_path) => {
+                outcome.deleted_files += 1;
                 outcome.quarantined_files.push(quarantined_path);
             }
             QuarantineOutcome::Skipped => outcome.skipped_files += 1,
