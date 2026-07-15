@@ -10,7 +10,7 @@ Elimina código muerto sin piedad.
 
 Kratos es una herramienta CLI para proyectos JavaScript y TypeScript. Encuentra archivos no usados, imports rotos, exports no usados y módulos huérfanos, y escribe los resultados en un reporte. La implementación actual combina un core/CLI en Rust con un launcher de npm, y el paquete npm `@jeremyfellaz/kratos` carga un addon nativo opcional específico de la plataforma.
 
-Kratos es una herramienta de análisis para un flujo de limpieza seguro, no un bot de eliminación automática. `clean` usa dry-run por defecto, y los archivos solo se eliminan después de revisar el reporte y pasar `--apply` explícitamente.
+Kratos es una herramienta de análisis para un flujo de limpieza seguro, no un bot de eliminación automática. `clean` usa dry-run por defecto. Tras revisar el reporte, `--apply` mueve los archivos verificados fuera de sus rutas de código y los conserva en `<root>/.kratos/clean-quarantine/`; no los elimina físicamente de forma automática.
 
 ## Capacidades Principales
 
@@ -35,7 +35,7 @@ npx @jeremyfellaz/kratos report ./my-app --format md
 npx @jeremyfellaz/kratos clean ./my-app --min-confidence 0.9
 ```
 
-Añade `--apply` solo después de revisar el reporte y decidir eliminar los objetivos listados.
+Añade `--apply` solo después de revisar el reporte y decidir poner en cuarentena los objetivos listados fuera de sus rutas de código.
 
 ```bash
 npx @jeremyfellaz/kratos clean ./my-app --apply --min-confidence 0.9
@@ -83,10 +83,10 @@ Compara los cambios de hallazgos entre dos reportes.
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 
-Previsualiza candidatos de eliminación o los elimina.
+Previsualiza candidatos de eliminación o los mueve fuera de sus rutas de código a una cuarentena conservada.
 
 - El comportamiento por defecto es dry-run.
-- Los archivos solo se eliminan cuando `--apply` está presente.
+- Con `--apply`, los archivos se conservan en `<root>/.kratos/clean-quarantine/` en lugar de desvincularse físicamente.
 - `--min-confidence value` es un umbral de confianza de `0.0` a `1.0`.
 - Si omites `--min-confidence`, Kratos lee `thresholds.cleanMinConfidence` de `kratos.config.json`; si no existe esa configuración, usa `0.0`.
 
@@ -144,7 +144,7 @@ Deletion targets: 1
 Threshold-skipped targets: 1
 - <root>/src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
 
-Re-run with --apply to delete these files.
+Re-run with --apply to move these files into retained quarantine.
 ```
 
 Comparar reportes idénticos no muestra hallazgos introducidos ni resueltos, solo conteos persistentes.

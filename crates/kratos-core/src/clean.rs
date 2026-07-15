@@ -9,6 +9,8 @@ use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
+#[cfg(unix)]
 use std::os::unix::io::{AsRawFd, FromRawFd};
 #[cfg(unix)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,7 +34,7 @@ static QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CleanOutcome {
-    pub deleted_files: usize,
+    pub quarantined_files: Vec<PathBuf>,
     pub skipped_files: usize,
     pub failed_files: Vec<CleanFailure>,
 }
@@ -139,7 +141,7 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
 
     if !apply {
         return Ok(CleanOutcome {
-            deleted_files: 0,
+            quarantined_files: Vec::new(),
             skipped_files: report.findings.deletion_candidates.len(),
             failed_files: Vec::new(),
         });
@@ -280,7 +282,7 @@ where
     G: FnMut(&Path),
 {
     let mut outcome = CleanOutcome {
-        deleted_files: 0,
+        quarantined_files: Vec::new(),
         skipped_files: plan.threshold_skipped_targets.len(),
         failed_files: Vec::new(),
     };
@@ -299,15 +301,15 @@ where
             continue;
         };
 
-        match quarantine_and_delete(
+        match quarantine_candidate(
             &report.root,
             &candidate_path,
             &expected,
             &mut before_quarantine,
             &mut after_quarantine_verification,
         ) {
-            QuarantineOutcome::Deleted => {
-                outcome.deleted_files += 1;
+            QuarantineOutcome::Quarantined(quarantined_path) => {
+                outcome.quarantined_files.push(quarantined_path);
             }
             QuarantineOutcome::Skipped => outcome.skipped_files += 1,
             QuarantineOutcome::Failed(error) => outcome.failed_files.push(CleanFailure {
@@ -343,13 +345,13 @@ fn snapshot_from_entry(entry: &CleanCandidateFingerprint) -> Option<FileSnapshot
 
 #[cfg_attr(not(unix), allow(dead_code))]
 enum QuarantineOutcome {
-    Deleted,
+    Quarantined(PathBuf),
     Skipped,
     Failed(String),
 }
 
 #[cfg(unix)]
-fn quarantine_and_delete<F, G>(
+fn quarantine_candidate<F, G>(
     report_root: &Path,
     candidate_path: &Path,
     expected: &FileSnapshot,
@@ -435,23 +437,30 @@ where
         );
     }
 
-    match unlink_at(&quarantine.directory, quarantine_candidate_name(), 0) {
-        Ok(()) => {
-            quarantine.remove_empty();
-            QuarantineOutcome::Deleted
+    match std::fs::symlink_metadata(candidate_path) {
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Ok(_) => {
+            return QuarantineOutcome::Failed(format!(
+                "원래 코드 경로가 다시 생성되어 격리 완료로 보고하지 않습니다. 보존 위치: {}",
+                quarantined_path.display()
+            ));
         }
-        Err(delete_error) => restore_or_preserve(
-            &quarantine,
-            &source_parent,
-            &candidate_name,
-            &quarantined_path,
-            QuarantineOutcome::Failed(delete_error.to_string()),
-        ),
+        Err(error) => {
+            return QuarantineOutcome::Failed(format!(
+                "원래 코드 경로의 부재를 확인하지 못했습니다. 보존 위치: {} ({error})",
+                quarantined_path.display()
+            ));
+        }
     }
+
+    // The verified object remains in quarantine. Portable POSIX cannot atomically
+    // bind an opened-file verification to unlinking that exact directory entry
+    // against a same-credential process that mutates the quarantine namespace.
+    QuarantineOutcome::Quarantined(quarantined_path)
 }
 
 #[cfg(not(unix))]
-fn quarantine_and_delete<F, G>(
+fn quarantine_candidate<F, G>(
     _report_root: &Path,
     _candidate_path: &Path,
     _expected: &FileSnapshot,
@@ -479,8 +488,20 @@ struct QuarantineDirectory {
 #[cfg(unix)]
 impl QuarantineDirectory {
     fn create(report_root: &Path) -> std::io::Result<Self> {
-        let root_path = std::fs::canonicalize(report_root)?;
-        let root_directory = open_directory(&root_path)?;
+        let report_root_path = std::fs::canonicalize(report_root)?;
+        let report_root_directory = open_directory(&report_root_path)?;
+        let state_directory =
+            open_or_create_directory_at(&report_root_directory, kratos_state_directory_name())?;
+        let root_directory =
+            open_or_create_directory_at(&state_directory, clean_quarantine_directory_name())?;
+        let root_metadata = root_directory.metadata()?;
+        if root_metadata.uid() != unsafe { libc::geteuid() } || root_metadata.mode() & 0o077 != 0 {
+            return Err(std::io::Error::new(
+                ErrorKind::PermissionDenied,
+                "clean quarantine root must be owner-only",
+            ));
+        }
+        let root_path = report_root_path.join(".kratos/clean-quarantine");
 
         for _ in 0..100 {
             let nonce = SystemTime::now()
@@ -530,9 +551,20 @@ impl QuarantineDirectory {
 
     fn path_is_pinned(&self, report_root: &Path) -> bool {
         let descriptor_identity = directory_identity_from_file(&self.directory);
-        let path_identity = fingerprint_parent_identity(&self.path);
-        let root_matches = self.root_path == realpath_or_fallback(report_root);
-        descriptor_identity.is_some() && descriptor_identity == path_identity && root_matches
+        let path_metadata = std::fs::symlink_metadata(&self.path).ok();
+        let path_identity = path_metadata
+            .as_ref()
+            .filter(|metadata| metadata.file_type().is_dir())
+            .and_then(|_| fingerprint_parent_identity(&self.path));
+        let expected_root = realpath_or_fallback(report_root).join(".kratos/clean-quarantine");
+        let canonical_path = std::fs::canonicalize(&self.path).ok();
+        descriptor_identity.is_some()
+            && descriptor_identity == path_identity
+            && self.root_path == expected_root
+            && canonical_path
+                .as_deref()
+                .and_then(Path::parent)
+                .is_some_and(|parent| parent == self.root_path)
     }
 
     fn remove_empty(&self) {
@@ -577,13 +609,8 @@ fn restore_or_preserve(
         quarantine_candidate_name(),
         source_parent,
         candidate_name,
-    )
-    .and_then(|_| unlink_at(&quarantine.directory, quarantine_candidate_name(), 0))
-    {
-        Ok(()) => {
-            quarantine.remove_empty();
-            restored_outcome
-        }
+    ) {
+        Ok(()) => restored_outcome,
         Err(error) => QuarantineOutcome::Failed(format!(
             "검증 실패 파일을 복원하지 못했습니다. 보존 위치: {} ({error})",
             quarantined_path.display()
@@ -595,6 +622,30 @@ fn restore_or_preserve(
 #[allow(clippy::manual_c_str_literals)]
 fn quarantine_candidate_name() -> &'static CStr {
     CStr::from_bytes_with_nul(b"candidate\0").expect("static quarantine name is valid")
+}
+
+#[cfg(unix)]
+#[allow(clippy::manual_c_str_literals)]
+fn kratos_state_directory_name() -> &'static CStr {
+    CStr::from_bytes_with_nul(b".kratos\0").expect("static state directory name is valid")
+}
+
+#[cfg(unix)]
+#[allow(clippy::manual_c_str_literals)]
+fn clean_quarantine_directory_name() -> &'static CStr {
+    CStr::from_bytes_with_nul(b"clean-quarantine\0").expect("static quarantine root name is valid")
+}
+
+#[cfg(unix)]
+fn open_or_create_directory_at(parent: &File, name: &CStr) -> std::io::Result<File> {
+    let created = unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) };
+    if created != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() != ErrorKind::AlreadyExists {
+            return Err(error);
+        }
+    }
+    open_directory_at(parent, name)
 }
 
 #[cfg(unix)]
@@ -779,7 +830,7 @@ mod tests {
         })
         .expect("clean should stay fail closed");
 
-        assert_eq!(outcome.deleted_files, 0);
+        assert_eq!(outcome.quarantined_files.len(), 0);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -816,7 +867,7 @@ mod tests {
         )
         .expect("per-file failure should be reported in the outcome");
 
-        assert_eq!(outcome.deleted_files, 1, "{outcome:?}");
+        assert_eq!(outcome.quarantined_files.len(), 1, "{outcome:?}");
         assert_eq!(outcome.skipped_files, 0);
         assert_eq!(outcome.failed_files.len(), 1);
         assert_eq!(outcome.failed_files[0].file, second);
@@ -844,7 +895,7 @@ mod tests {
         })
         .expect("clean should stay fail closed");
 
-        assert_eq!(outcome.deleted_files, 0);
+        assert_eq!(outcome.quarantined_files.len(), 0);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -856,7 +907,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn parent_relocation_after_quarantine_verification_cannot_redirect_deletion() {
+    fn parent_relocation_after_quarantine_verification_cannot_redirect_mutation() {
         let root = temp_dir("clean-post-verification-parent-race");
         let nested = root.join("nested");
         let candidate = nested.join("dead.ts");
@@ -882,15 +933,15 @@ mod tests {
         )
         .expect("verified quarantine deletion should fail closed");
 
-        assert_eq!(outcome.deleted_files, 0, "{outcome:?}");
+        assert_eq!(outcome.quarantined_files.len(), 0, "{outcome:?}");
         assert_eq!(outcome.skipped_files, 0);
         assert_eq!(outcome.failed_files.len(), 1);
         assert_eq!(
             std::fs::read_to_string(&replacement).expect("replacement should remain"),
             "replacement\n"
         );
-        let preserved = std::fs::read_dir(&root)
-            .expect("root should remain readable")
+        let preserved = std::fs::read_dir(root.join(".kratos/clean-quarantine"))
+            .expect("quarantine root should remain readable")
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .find(|path| {
@@ -930,7 +981,7 @@ mod tests {
         })
         .expect("clean should restore the redirected pathname");
 
-        assert_eq!(outcome.deleted_files, 0);
+        assert_eq!(outcome.quarantined_files.len(), 0);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -942,7 +993,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn quarantine_relocation_is_not_followed_for_final_delete() {
+    fn quarantine_relocation_is_not_followed_for_final_mutation() {
         let root = temp_dir("clean-quarantine-race");
         let candidate = root.join("candidate.ts");
         let outside = temp_dir("clean-quarantine-race-outside");
@@ -966,15 +1017,86 @@ mod tests {
         )
         .expect("clean should restore from the pinned quarantine descriptor");
 
-        assert_eq!(outcome.deleted_files, 0);
+        assert_eq!(outcome.quarantined_files.len(), 0);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
             std::fs::read_to_string(&outside_target).expect("outside target should remain"),
             "outside\n"
         );
-        assert!(!outside.join("moved-quarantine/candidate").exists());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("moved-quarantine/candidate"))
+                .expect("verified bytes remain retained in moved quarantine"),
+            "candidate\n"
+        );
         assert!(candidate.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn matching_quarantine_entry_is_retained_without_final_unlink() {
+        let root = temp_dir("clean-quarantine-entry-race");
+        let candidate = root.join("candidate.ts");
+        let outside = temp_dir("clean-quarantine-entry-race-outside");
+        let outside_link = outside.join("candidate-link");
+        std::fs::write(&candidate, "candidate\n").expect("candidate should write");
+        let report = report_for_files(&root, std::slice::from_ref(&candidate));
+        let plan = plan_clean_candidates(&report, 0.0).expect("plan should build");
+
+        let outcome = apply_clean_plan_with_hooks(
+            &report,
+            &plan,
+            |_| {},
+            |quarantined_path| {
+                std::fs::hard_link(quarantined_path, &outside_link)
+                    .expect("outside hardlink should exist");
+                std::fs::remove_file(quarantined_path).expect("quarantine entry should move");
+                std::fs::hard_link(&outside_link, quarantined_path)
+                    .expect("matching quarantine entry should return");
+            },
+        )
+        .expect("retained quarantine should succeed without unlink");
+
+        assert_eq!(outcome.quarantined_files.len(), 1);
+        assert!(outcome.failed_files.is_empty());
+        assert!(!candidate.exists());
+        assert_eq!(
+            std::fs::read_to_string(&outside_link).expect("outside link remains"),
+            "candidate\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&outcome.quarantined_files[0])
+                .expect("quarantine entry remains"),
+            "candidate\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reintroduced_original_path_is_not_reported_as_quarantined() {
+        let root = temp_dir("clean-original-path-reintroduced");
+        let candidate = root.join("candidate.ts");
+        std::fs::write(&candidate, "candidate\n").expect("candidate should write");
+        let report = report_for_files(&root, std::slice::from_ref(&candidate));
+        let plan = plan_clean_candidates(&report, 0.0).expect("plan should build");
+
+        let outcome = apply_clean_plan_with_hooks(
+            &report,
+            &plan,
+            |_| {},
+            |quarantined_path| {
+                std::fs::hard_link(quarantined_path, &candidate)
+                    .expect("original pathname should be reintroduced");
+            },
+        )
+        .expect("accounting mismatch should be reported per file");
+
+        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.failed_files.len(), 1);
+        assert!(candidate.exists());
+        assert!(outcome.failed_files[0]
+            .error
+            .contains("원래 코드 경로가 다시 생성"));
     }
 
     fn report_for_files(root: &Path, files: &[PathBuf]) -> ReportV2 {

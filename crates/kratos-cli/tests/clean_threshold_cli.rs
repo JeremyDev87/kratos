@@ -40,7 +40,7 @@ fn clean_uses_config_threshold_and_flag_override() {
     );
     assert!(apply.status.success());
     let apply_stdout = String::from_utf8_lossy(&apply.stdout);
-    assert!(apply_stdout.contains("Kratos clean: 파일 1개를 삭제했습니다."));
+    assert!(apply_stdout.contains("Kratos clean: 파일 1개를 코드 경로에서 격리했습니다."));
     assert!(apply_stdout.contains("건너뛴 파일: 1"));
     assert!(!project_root.join("high-confidence.ts").exists());
     assert!(project_root.join("mid-confidence.ts").exists());
@@ -67,7 +67,7 @@ fn clean_reports_and_skips_stale_fingerprint_candidates() {
     );
     assert!(apply.status.success());
     let apply_stdout = String::from_utf8_lossy(&apply.stdout);
-    assert!(apply_stdout.contains("Kratos clean: 파일 0개를 삭제했습니다."));
+    assert!(apply_stdout.contains("Kratos clean: 파일 0개를 코드 경로에서 격리했습니다."));
     assert!(apply_stdout.contains("건너뛴 파일: 2"));
     assert!(high_file.exists());
 }

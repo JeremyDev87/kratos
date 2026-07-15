@@ -6,7 +6,7 @@
 
 ## Current Baseline
 
-- `clean`은 기본 dry-run이며 `--apply`가 있을 때만 삭제한다.
+- `clean`은 기본 dry-run이며 `--apply`가 있을 때만 원래 코드 경로에서 보존 격리한다. 자동 물리 삭제는 하지 않는다.
 - `clean --min-confidence`와 `thresholds.cleanMinConfidence`가 동작한다.
 - suppression은 `kratos.config.json`과 `.kratos/suppressions.json`에서 읽힌다.
 - clean preview helper는 삭제를 수행하지 않는 core helper로 분리되어 있다.
@@ -17,7 +17,7 @@
 - interactive mode는 `stdin.read_line()` 기반 prompt만 사용한다.
 - `sweep`에서 suppression을 저장할 때는 `.kratos/suppressions.json`만 쓴다.
 - `sweep`는 threshold와 suppression을 모두 반영한 뒤 preview 순서를 결정한다.
-- 사용자의 명시적 선택 없이 파일 삭제가 일어나면 안 된다.
+- 사용자의 명시적 선택 없이 파일이 원래 코드 경로에서 격리되면 안 된다.
 
 ## PR WOW-5A. kratos sweep Interactive CLI
 

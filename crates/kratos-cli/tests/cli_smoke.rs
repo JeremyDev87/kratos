@@ -335,9 +335,8 @@ fn clean_accepts_legacy_v1_reports_through_cli() {
         ],
     );
     assert!(apply.status.success());
-    assert!(
-        String::from_utf8_lossy(&apply.stdout).contains("Kratos clean: 파일 0개를 삭제했습니다.")
-    );
+    assert!(String::from_utf8_lossy(&apply.stdout)
+        .contains("Kratos clean: 파일 0개를 코드 경로에서 격리했습니다."));
     assert!(project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(project_root.join("src/lib/broken.ts").exists());
 }
@@ -632,13 +631,13 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
     #[cfg(unix)]
     {
         assert!(String::from_utf8_lossy(&apply.stdout)
-            .contains("Kratos clean: 파일 1개를 삭제했습니다."));
+            .contains("Kratos clean: 파일 1개를 코드 경로에서 격리했습니다."));
         assert!(!dead_file.exists());
     }
     #[cfg(not(unix))]
     {
         let apply_stdout = String::from_utf8_lossy(&apply.stdout);
-        assert!(apply_stdout.contains("Kratos clean: 파일 0개를 삭제했습니다."));
+        assert!(apply_stdout.contains("Kratos clean: 파일 0개를 코드 경로에서 격리했습니다."));
         assert!(apply_stdout.contains("건너뛴 파일: 1"));
         assert!(dead_file.exists());
     }
@@ -690,9 +689,8 @@ fn boolean_flags_do_not_consume_following_positionals() {
         ],
     );
     assert!(clean.status.success());
-    assert!(
-        String::from_utf8_lossy(&clean.stdout).contains("Kratos clean: 파일 2개를 삭제했습니다.")
-    );
+    assert!(String::from_utf8_lossy(&clean.stdout)
+        .contains("Kratos clean: 파일 2개를 코드 경로에서 격리했습니다."));
     assert!(!project_root.join("src/components/DeadWidget.tsx").exists());
     assert!(!project_root.join("src/lib/broken.ts").exists());
 }

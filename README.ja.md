@@ -10,7 +10,7 @@
 
 Kratos は JavaScript/TypeScript プロジェクト向けの CLI ツールです。未使用ファイル、壊れた import、未使用 export、孤立したモジュールを検出し、結果を report に保存します。現在の実装は Rust core/CLI と npm launcher を組み合わせており、npm package `@jeremyfellaz/kratos` が platform ごとの optional native addon を読み込みます。
 
-Kratos は自動削除 bot ではなく、安全なクリーンアップ手順のための分析ツールです。`clean` はデフォルトで dry-run であり、report を確認したうえで `--apply` を明示した場合だけファイルを削除します。
+Kratos は自動削除 bot ではなく、安全なクリーンアップ手順のための分析ツールです。`clean` はデフォルトで dry-run です。report 確認後の `--apply` は、検証済みファイルを元のコードパスから `<root>/.kratos/clean-quarantine/` へ移動して保持し、自動で物理削除しません。
 
 ## 主な機能
 
@@ -35,7 +35,7 @@ npx @jeremyfellaz/kratos report ./my-app --format md
 npx @jeremyfellaz/kratos clean ./my-app --min-confidence 0.9
 ```
 
-リストされた対象を削除すると判断した後だけ `--apply` を追加してください。
+リストされた対象を元のコードパスから隔離すると判断した後だけ `--apply` を追加してください。
 
 ```bash
 npx @jeremyfellaz/kratos clean ./my-app --apply --min-confidence 0.9
@@ -83,10 +83,10 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 
-削除候補を preview するか、実際に削除します。
+削除候補を preview するか、元のコードパスから保持型 quarantine へ移動します。
 
 - デフォルト動作は dry-run です。
-- `--apply` がある場合だけファイルを削除します。
+- `--apply` ではファイルを `<root>/.kratos/clean-quarantine/` に保持し、物理的な unlink は自動実行しません。
 - `--min-confidence value` は `0.0` から `1.0` までの信頼度しきい値です。
 - `--min-confidence` を省略すると、Kratos は `kratos.config.json` の `thresholds.cleanMinConfidence` を読みます。設定がなければ `0.0` を使います。
 
@@ -144,7 +144,7 @@ Deletion targets: 1
 Threshold-skipped targets: 1
 - <root>/src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
 
-Re-run with --apply to delete these files.
+Re-run with --apply to move these files into retained quarantine.
 ```
 
 同一の report を比較すると、新規または解決済みの検出結果はなく、継続している件数だけが表示されます。

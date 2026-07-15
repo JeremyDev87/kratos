@@ -43,7 +43,7 @@ fn clean_from_report_with_min_confidence_skips_low_confidence_targets() {
     let outcome =
         clean_from_report_with_min_confidence(&report, 0.9).expect("clean should succeed");
 
-    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.quarantined_files.len(), 1);
     assert_eq!(outcome.skipped_files, 1);
     assert!(!temp_root.join("src/high.ts").exists());
     assert!(temp_root.join("src/low.ts").exists());
