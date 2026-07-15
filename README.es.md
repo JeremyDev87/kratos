@@ -167,11 +167,11 @@ Totals: introduced 0, resolved 0, persisted 9
 
 ## Esquema Del Reporte
 
-Actualmente `scan` escribe reportes con `schemaVersion: 2`.
+Actualmente `scan` escribe reportes con `schemaVersion: 3`.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "summary": {
     "filesScanned": 5,
     "entrypoints": 1,
@@ -181,11 +181,23 @@ Actualmente `scan` escribe reportes con `schemaVersion: 2`.
     "unusedImports": 0,
     "routeEntrypoints": 1,
     "deletionCandidates": 2
+  },
+  "cleanSafety": {
+    "fingerprintAlgorithm": "sha256",
+    "candidates": [
+      {
+        "file": "<absolute-path>",
+        "fingerprint": "<sha256-or-null>",
+        "identity": "<stable-file-identity-or-null>",
+        "parentIdentity": "<stable-parent-identity-or-null>"
+      }
+    ]
   }
 }
 ```
 
 `findings` contiene `brokenImports`, `orphanFiles`, `deadExports`, `unusedImports`, `routeEntrypoints` y `deletionCandidates`. `graph.modules` registra rutas de módulos analizados, estado de entrypoint y conteos de imports/exports.
+Los reportes v2/legacy siguen siendo legibles, pero `clean --apply` falla de forma cerrada porque no contienen evidencia `cleanSafety`.
 
 ## Configuración
 

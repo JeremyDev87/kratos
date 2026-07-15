@@ -167,11 +167,11 @@ Totals: introduced 0, resolved 0, persisted 9
 
 ## レポートスキーマ
 
-現在の `scan` は `schemaVersion: 2` の report を書き込みます。
+現在の `scan` は `schemaVersion: 3` の report を書き込みます。
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "summary": {
     "filesScanned": 5,
     "entrypoints": 1,
@@ -181,11 +181,23 @@ Totals: introduced 0, resolved 0, persisted 9
     "unusedImports": 0,
     "routeEntrypoints": 1,
     "deletionCandidates": 2
+  },
+  "cleanSafety": {
+    "fingerprintAlgorithm": "sha256",
+    "candidates": [
+      {
+        "file": "<absolute-path>",
+        "fingerprint": "<sha256-or-null>",
+        "identity": "<stable-file-identity-or-null>",
+        "parentIdentity": "<stable-parent-identity-or-null>"
+      }
+    ]
   }
 }
 ```
 
 `findings` には `brokenImports`、`orphanFiles`、`deadExports`、`unusedImports`、`routeEntrypoints`、`deletionCandidates` が入ります。`graph.modules` には解析済みのモジュールパス、entrypoint 状態、import/export 件数が記録されます。
+v2/legacy report は引き続き読み込めますが、`cleanSafety` evidence がないため `clean --apply` は fail-closed になります。
 
 ## 設定
 

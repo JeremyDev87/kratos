@@ -167,11 +167,11 @@ Totals: introduced 0, resolved 0, persisted 9
 
 ## 报告 Schema
 
-当前 `scan` 会写入 `schemaVersion: 2` report。
+当前 `scan` 会写入 `schemaVersion: 3` report。
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "summary": {
     "filesScanned": 5,
     "entrypoints": 1,
@@ -181,11 +181,23 @@ Totals: introduced 0, resolved 0, persisted 9
     "unusedImports": 0,
     "routeEntrypoints": 1,
     "deletionCandidates": 2
+  },
+  "cleanSafety": {
+    "fingerprintAlgorithm": "sha256",
+    "candidates": [
+      {
+        "file": "<absolute-path>",
+        "fingerprint": "<sha256-or-null>",
+        "identity": "<stable-file-identity-or-null>",
+        "parentIdentity": "<stable-parent-identity-or-null>"
+      }
+    ]
   }
 }
 ```
 
 `findings` 包含 `brokenImports`、`orphanFiles`、`deadExports`、`unusedImports`、`routeEntrypoints` 和 `deletionCandidates`。`graph.modules` 会记录已分析的模块路径、entrypoint 状态以及 import/export 数量。
+v2/legacy report 仍可读取，但由于缺少 `cleanSafety` evidence，`clean --apply` 会 fail-closed。
 
 ## 配置
 
