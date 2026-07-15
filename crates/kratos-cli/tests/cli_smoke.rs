@@ -130,7 +130,7 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(clean_stdout.contains("상태: 존재함"));
     assert!(clean_stdout.contains("미리보기:"));
     assert!(clean_stdout.contains("export function DeadWidget()"));
-    assert!(clean_stdout.contains("삭제하려면 --apply로 다시 실행하세요."));
+    assert!(clean_stdout.contains("원래 코드 경로에서 보존 격리하려면 --apply로 다시 실행하세요."));
 
     let diff = run_cli(&[
         "diff",
