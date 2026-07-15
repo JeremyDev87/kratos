@@ -10,7 +10,7 @@ Destroy dead code ruthlessly.
 
 Kratos is a CLI tool for JavaScript and TypeScript projects. It finds unused files, broken imports, unused exports, and orphaned modules, then writes the results to a report. The current implementation combines a Rust core/CLI with an npm launcher, and the npm package `@jeremyfellaz/kratos` loads an optional platform-specific native add-on.
 
-Kratos is an analysis tool for a safe cleanup workflow, not an automatic deletion bot. `clean` is dry-run by default, and files are only removed after you review the report and explicitly pass `--apply`.
+Kratos is an analysis tool for a safe cleanup workflow, not an automatic deletion bot. `clean` is dry-run by default. After review, `--apply` moves verified files out of their code paths into retained storage under `<root>/.kratos/clean-quarantine/`; it does not physically unlink them automatically.
 
 ## Core Capabilities
 
@@ -39,7 +39,7 @@ npx @jeremyfellaz/kratos report ./my-app --format md
 npx @jeremyfellaz/kratos clean ./my-app --min-confidence 0.9
 ```
 
-Only add `--apply` after reviewing the report and deciding to delete the listed targets.
+Only add `--apply` after reviewing the report and deciding to quarantine the listed targets out of their code paths.
 
 ```bash
 npx @jeremyfellaz/kratos clean ./my-app --apply --min-confidence 0.9
@@ -87,10 +87,10 @@ Compares finding changes between two reports.
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 
-Previews deletion candidates or deletes them.
+Previews deletion candidates or moves them out of their code paths into retained quarantine.
 
 - Dry-run is the default behavior.
-- Files are deleted only when `--apply` is present.
+- With `--apply`, files are retained under `<root>/.kratos/clean-quarantine/` instead of being physically unlinked.
 - `--min-confidence value` is a confidence threshold from `0.0` to `1.0`.
 - If `--min-confidence` is omitted, Kratos reads `thresholds.cleanMinConfidence` from `kratos.config.json`; when no setting exists, it uses `0.0`.
 
@@ -148,7 +148,7 @@ Deletion targets: 1
 Threshold-skipped targets: 1
 - <root>/src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
 
-Re-run with --apply to delete these files.
+Re-run with --apply to move these files into retained quarantine.
 ```
 
 Comparing identical reports shows no introduced or resolved findings, only persisted counts.

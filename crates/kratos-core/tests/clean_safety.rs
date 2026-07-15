@@ -26,7 +26,7 @@ fn clean_rejects_deletion_candidates_outside_report_root() {
     let outcome = clean_from_report(&report, true).expect("clean should succeed");
 
     assert!(outside_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -47,7 +47,7 @@ fn clean_rejects_symlink_escape_candidates() {
     let outcome = clean_from_report(&report, true).expect("clean should succeed");
 
     assert!(outside_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -67,7 +67,7 @@ fn clean_skips_dangling_symlink_candidates_without_fingerprints() {
         std::fs::symlink_metadata(&dangling_link).is_ok(),
         "dangling symlink should remain"
     );
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -92,7 +92,7 @@ fn clean_skips_live_symlink_candidates_without_touching_targets() {
         "symlink entry should remain"
     );
     assert!(outside_file.exists(), "target file should remain untouched");
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -118,7 +118,7 @@ fn clean_skips_direct_symlink_even_with_forged_matching_evidence() {
 
     assert!(std::fs::symlink_metadata(&symlink_path).is_ok());
     assert!(outside_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -139,12 +139,12 @@ fn clean_allows_symlinked_project_root_without_removing_parent_directories() {
 
     assert!(!dead_file.exists());
     assert!(nested_dir.exists());
-    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.quarantined_files.len(), 1);
     assert_eq!(outcome.skipped_files, 0);
 }
 
 #[test]
-fn clean_deletes_through_root_contained_symlink_parent_without_parent_cleanup() {
+fn clean_quarantines_through_root_contained_symlink_parent_without_parent_cleanup() {
     let temp_root = temp_dir("clean-best-effort-cleanup");
     let report_root = temp_root.join("app");
     let real_nested_dir = report_root.join("real-nested");
@@ -159,7 +159,7 @@ fn clean_deletes_through_root_contained_symlink_parent_without_parent_cleanup() 
     let outcome = clean_from_report(&report, true).expect("clean should stay best-effort");
 
     assert!(!dead_file.exists());
-    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.quarantined_files.len(), 1);
     assert_eq!(outcome.skipped_files, 0);
 }
 
@@ -188,7 +188,7 @@ fn clean_from_report_path_accepts_future_schema_reports_when_shape_is_compatible
         clean_from_report_path(&report_path, true).expect("future-schema clean should work");
 
     assert!(!dead_file.exists());
-    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.quarantined_files.len(), 1);
     assert_eq!(outcome.skipped_files, 0);
 }
 
@@ -243,7 +243,7 @@ fn clean_from_report_rejects_reports_older_than_v2() {
 }
 
 #[test]
-fn clean_from_report_path_reads_current_report_and_deletes_unchanged_candidate() {
+fn clean_from_report_path_reads_current_report_and_quarantines_unchanged_candidate() {
     let temp_root = temp_dir("clean-report-path-v2");
     let report_root = temp_root.join("app");
     let dead_file = report_root.join("dead.ts");
@@ -261,7 +261,16 @@ fn clean_from_report_path_reads_current_report_and_deletes_unchanged_candidate()
         clean_from_report_path(&report_path, true).expect("clean_from_report_path should work");
 
     assert!(!dead_file.exists());
-    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.quarantined_files.len(), 1);
+    let canonical_report_root =
+        std::fs::canonicalize(&report_root).expect("report root canonicalizes");
+    assert!(outcome.quarantined_files[0]
+        .starts_with(canonical_report_root.join(".kratos/clean-quarantine")));
+    assert_eq!(
+        std::fs::read_to_string(&outcome.quarantined_files[0])
+            .expect("verified candidate bytes remain quarantined"),
+        "export const dead = true;\n"
+    );
     assert_eq!(outcome.skipped_files, 0);
 }
 
@@ -279,7 +288,7 @@ fn clean_skips_candidate_when_content_changed_after_report() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -299,7 +308,7 @@ fn clean_skips_candidate_recreated_at_the_same_path() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -319,7 +328,7 @@ fn clean_skips_same_content_file_recreated_at_the_same_path() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -337,7 +346,7 @@ fn clean_skips_safe_false_even_with_a_matching_fingerprint() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -356,7 +365,7 @@ fn clean_skips_schema_v2_candidate_without_fingerprint_evidence() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -374,7 +383,7 @@ fn clean_skips_missing_file_after_report_generation() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(!dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -393,7 +402,7 @@ fn clean_skips_candidate_replaced_by_a_non_regular_file() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.is_dir());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -411,7 +420,7 @@ fn clean_skips_unsupported_fingerprint_algorithm() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -437,7 +446,7 @@ fn clean_skips_duplicate_fingerprint_entries() {
     let outcome = clean_from_report(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 1);
 }
 
@@ -464,7 +473,7 @@ fn duplicate_normalized_deletion_candidates_fail_closed_in_preview_and_apply() {
 
     let outcome = clean_from_report(&report, true).expect("apply should fail closed");
     assert!(dead_file.exists());
-    assert_eq!(outcome.deleted_files, 0);
+    assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 2);
     assert!(outcome.failed_files.is_empty());
 }

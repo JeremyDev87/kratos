@@ -189,6 +189,45 @@ test("packed root package boots the actual native addon for the current platform
       ),
       true,
     );
+
+    const cleanProjectPath = path.join(tempRoot, "unix-clean-project");
+    const cleanReportPath = path.join(tempRoot, "unix-clean-report.json");
+    await fsp.cp(demoAppPath, cleanProjectPath, { recursive: true });
+    const scanForClean = runInstalledKratos(
+      installRoot,
+      ["scan", cleanProjectPath, "--output", cleanReportPath, "--json"],
+      { cwd: installRoot },
+    );
+    assert.equal(scanForClean.status, 0, scanForClean.stderr || scanForClean.stdout);
+
+    const cleanReport = JSON.parse(await fsp.readFile(cleanReportPath, "utf8"));
+    const originalCandidates = await Promise.all(
+      cleanReport.findings.deletionCandidates.map(async (candidate) => ({
+        file: candidate.file,
+        contents: await fsp.readFile(candidate.file),
+      })),
+    );
+    assert.ok(originalCandidates.length > 0, "Unix clean smoke requires a deletion candidate");
+    const cleanResult = runInstalledKratos(installRoot, ["clean", cleanReportPath, "--apply"], {
+      cwd: installRoot,
+    });
+    assert.equal(cleanResult.status, 0, cleanResult.stderr || cleanResult.stdout);
+    assert.match(cleanResult.stdout, new RegExp(`보존된 격리 파일: ${originalCandidates.length}`));
+    for (const candidate of originalCandidates) {
+      assert.equal(fs.existsSync(candidate.file), false, `Expected code path to be quarantined: ${candidate.file}`);
+    }
+
+    const quarantineRoot = path.join(cleanProjectPath, ".kratos", "clean-quarantine");
+    const quarantineEntries = await fsp.readdir(quarantineRoot, { withFileTypes: true });
+    const retainedContents = await Promise.all(
+      quarantineEntries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => fsp.readFile(path.join(quarantineRoot, entry.name, "candidate"))),
+    );
+    assert.deepEqual(
+      retainedContents.map((contents) => contents.toString("hex")).sort(),
+      originalCandidates.map((candidate) => candidate.contents.toString("hex")).sort(),
+    );
   }
   assert.equal(path.resolve(report.project.root), demoAppPath);
 });

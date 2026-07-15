@@ -51,11 +51,18 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
 
     let outcome = clean_from_report_with_min_confidence(&report, min_confidence)?;
     let mut output = format!(
-        "Kratos clean: 파일 {}개를 삭제했습니다.\n건너뛴 파일: {}\n실패한 파일: {}",
-        outcome.deleted_files,
+        "Kratos clean: 파일 {}개를 코드 경로에서 격리했습니다.\n보존된 격리 파일: {}\n건너뛴 파일: {}\n실패한 파일: {}",
+        outcome.quarantined_files.len(),
+        outcome.quarantined_files.len(),
         outcome.skipped_files,
         outcome.failed_files.len()
     );
+    for quarantined in &outcome.quarantined_files {
+        output.push_str(&format!(
+            "\n- 격리 보존: {}",
+            relative_path(quarantined, &report.root)
+        ));
+    }
     for failure in &outcome.failed_files {
         output.push_str(&format!(
             "\n- {}: {}",

@@ -10,7 +10,7 @@
 
 Kratos는 JavaScript/TypeScript 프로젝트에서 사용되지 않는 파일, 끊어진 import, 사용되지 않는 export, 고립된 모듈을 찾아 리포트로 남기는 CLI 도구입니다. 현재 구조는 Rust core/CLI와 npm launcher를 결합하며, npm 패키지 `@jeremyfellaz/kratos`가 플랫폼별 native addon 패키지를 선택적으로 불러 실행합니다.
 
-Kratos는 자동 삭제 도구라기보다 안전한 정리 흐름을 위한 분석 도구입니다. `clean`은 기본적으로 dry-run이며, 실제 삭제는 리포트를 검토한 뒤 `--apply`를 명시했을 때만 수행합니다.
+Kratos는 자동 삭제 도구라기보다 안전한 정리 흐름을 위한 분석 도구입니다. `clean`은 기본적으로 dry-run이며, `--apply`는 검증된 파일을 원래 코드 경로에서 `<root>/.kratos/clean-quarantine/`으로 이동해 보존합니다. 자동 물리 삭제는 수행하지 않습니다.
 
 ## 핵심 기능
 
@@ -39,7 +39,7 @@ npx @jeremyfellaz/kratos report ./my-app --format md
 npx @jeremyfellaz/kratos clean ./my-app --min-confidence 0.9
 ```
 
-리포트를 확인한 뒤 실제 삭제가 필요할 때만 `--apply`를 붙입니다.
+리포트를 확인한 뒤 원래 코드 경로에서 격리할 때만 `--apply`를 붙입니다.
 
 ```bash
 npx @jeremyfellaz/kratos clean ./my-app --apply --min-confidence 0.9
@@ -87,10 +87,10 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 
-삭제 후보를 preview하거나 실제로 삭제합니다.
+삭제 후보를 preview하거나 원래 코드 경로에서 보존 격리합니다.
 
 - 기본 동작은 dry-run입니다.
-- `--apply`를 붙인 경우에만 파일 삭제를 수행합니다.
+- `--apply`를 붙이면 파일을 `<root>/.kratos/clean-quarantine/`으로 이동해 보존하며 자동으로 물리 삭제하지 않습니다.
 - `--min-confidence value`는 `0.0`부터 `1.0`까지의 confidence threshold입니다.
 - `--min-confidence`를 생략하면 `kratos.config.json`의 `thresholds.cleanMinConfidence`를 사용하고, 설정이 없으면 `0.0`을 사용합니다.
 
@@ -148,7 +148,7 @@ Deletion targets: 1
 Threshold-skipped targets: 1
 - <root>/src/lib/broken.ts (confidence 0.88, Module has no inbound references and is not treated as an entrypoint.)
 
-Re-run with --apply to delete these files.
+Re-run with --apply to move these files into retained quarantine.
 ```
 
 동일한 두 리포트를 비교하면 새로 생기거나 해결된 탐지 결과 없이 유지 중인 개수만 표시됩니다.
