@@ -1,4 +1,6 @@
 use std::fs::{File, Metadata};
+#[cfg(unix)]
+use std::io::Seek;
 use std::io::{Error, ErrorKind, Read};
 use std::path::Path;
 
@@ -36,14 +38,15 @@ pub(crate) fn read_source_and_snapshot(
             (before_identity == opened_identity.as_deref()? && after_identity == before_identity)
                 .then_some(before_identity)
         });
-    let stable_parent = before_parent
-        .as_ref()
-        .zip(after_parent.as_ref())
-        .and_then(|(before, after)| {
-            let before_identity = directory_identity(before)?;
-            let after_identity = directory_identity(after)?;
-            (before_identity == after_identity).then_some(before_identity)
-        });
+    let stable_parent =
+        before_parent
+            .as_ref()
+            .zip(after_parent.as_ref())
+            .and_then(|(before, after)| {
+                let before_identity = directory_identity(before)?;
+                let after_identity = directory_identity(after)?;
+                (before_identity == after_identity).then_some(before_identity)
+            });
 
     let snapshot = stable_path
         .zip(stable_parent)
@@ -116,6 +119,42 @@ pub(crate) fn inspect_regular_file(path: &Path) -> std::io::Result<FileSnapshot>
         identity,
         parent_identity,
     })
+}
+
+#[cfg(unix)]
+pub(crate) fn inspect_open_regular_file(mut file: File) -> std::io::Result<(String, String)> {
+    let before = file.metadata()?;
+    let Some(identity) = regular_file_identity(&before) else {
+        return Err(Error::new(
+            ErrorKind::Unsupported,
+            "stable file identity is unavailable",
+        ));
+    };
+
+    file.rewind()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+
+    let after = file.metadata()?;
+    if regular_file_identity(&after).as_deref() != Some(identity.as_str()) {
+        return Err(Error::other(
+            "opened file identity changed while fingerprinting",
+        ));
+    }
+
+    Ok((format!("{:x}", hasher.finalize()), identity))
+}
+
+#[cfg(unix)]
+pub(crate) fn directory_identity_from_file(file: &File) -> Option<String> {
+    directory_identity(&file.metadata().ok()?)
 }
 
 pub(crate) fn current_parent_identity(path: &Path) -> Option<String> {

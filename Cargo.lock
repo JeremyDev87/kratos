@@ -296,6 +296,7 @@ dependencies = [
 name = "kratos-core"
 version = "0.3.7"
 dependencies = [
+ "libc",
  "oxc_allocator",
  "oxc_ast",
  "oxc_ast_visit",

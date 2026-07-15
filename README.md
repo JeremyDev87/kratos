@@ -171,11 +171,11 @@ Totals: introduced 0, resolved 0, persisted 9
 
 ## 리포트 스키마
 
-현재 `scan`은 `schemaVersion: 2` report를 생성합니다.
+현재 `scan`은 `schemaVersion: 3` report를 생성합니다.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "summary": {
     "filesScanned": 5,
     "entrypoints": 1,
@@ -185,11 +185,23 @@ Totals: introduced 0, resolved 0, persisted 9
     "unusedImports": 0,
     "routeEntrypoints": 1,
     "deletionCandidates": 2
+  },
+  "cleanSafety": {
+    "fingerprintAlgorithm": "sha256",
+    "candidates": [
+      {
+        "file": "<absolute-path>",
+        "fingerprint": "<sha256-or-null>",
+        "identity": "<stable-file-identity-or-null>",
+        "parentIdentity": "<stable-parent-identity-or-null>"
+      }
+    ]
   }
 }
 ```
 
 `findings`에는 `brokenImports`, `orphanFiles`, `deadExports`, `unusedImports`, `routeEntrypoints`, `deletionCandidates`가 들어갑니다. `graph.modules`에는 분석된 모듈 경로, entrypoint 여부, import/export 개수가 기록됩니다.
+v2/legacy report는 계속 읽을 수 있지만 `cleanSafety` evidence가 없으므로 `clean --apply`에서는 fail-closed됩니다.
 
 ## 설정
 
