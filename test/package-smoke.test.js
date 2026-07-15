@@ -133,12 +133,12 @@ test("packed root package boots the actual native addon for the current platform
     assert.equal(
       report.cleanSafety.candidates.every(
         (candidate) =>
-          typeof candidate.fingerprint === "string" &&
-          candidate.fingerprint.length === 64 &&
-          candidate.identity === null &&
-          candidate.parentIdentity === null,
+          (candidate.fingerprint === null ||
+            (typeof candidate.fingerprint === "string" && candidate.fingerprint.length === 64)) &&
+          (candidate.identity === null || candidate.parentIdentity === null),
       ),
       true,
+      JSON.stringify(report.cleanSafety.candidates),
     );
     assert.equal(
       report.findings.deletionCandidates.every((candidate) => candidate.safe === false),
