@@ -10,6 +10,7 @@ pub mod jsonc;
 pub mod model;
 pub mod parser;
 pub mod report;
+mod report_contract;
 pub mod report_diff;
 pub mod report_format;
 pub mod resolve;

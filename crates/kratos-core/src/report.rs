@@ -8,11 +8,14 @@ use crate::model::{
     ImportKind, ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2, RouteEntrypointFinding,
     SummaryCounts, UnusedImportFinding, REPORT_V2,
 };
+use crate::report_contract::{
+    finding_field, findings, graph, module, project, summary, top_level, REPORT_SCHEMA_VERSION,
+};
 
 pub fn validate_report_version(report: &ReportV2) -> KratosResult<()> {
-    if report.version != REPORT_V2 {
+    if report.version != REPORT_SCHEMA_VERSION {
         return Err(KratosError::InvalidReportVersion {
-            expected: REPORT_V2,
+            expected: REPORT_SCHEMA_VERSION,
             found: report.version,
         });
     }
@@ -23,27 +26,27 @@ pub fn validate_report_version(report: &ReportV2) -> KratosResult<()> {
 pub fn serialize_report_pretty(_report: &ReportV2) -> KratosResult<String> {
     validate_report_version(_report)?;
     let value = json!({
-        "schemaVersion": _report.version,
-        "generatedAt": _report.generated_at,
-        "project": {
-            "root": path_to_string(&_report.root),
-            "configPath": _report
+        top_level::SCHEMA_VERSION: _report.version,
+        top_level::GENERATED_AT: _report.generated_at,
+        top_level::PROJECT: {
+            project::ROOT: path_to_string(&_report.root),
+            project::CONFIG_PATH: _report
                 .config_path
                 .as_ref()
                 .map(|path| Value::String(path_to_string(path)))
                 .unwrap_or(Value::Null),
         },
-        "summary": serialize_summary(&_report.summary),
-        "findings": {
-            "brokenImports": _report.findings.broken_imports.iter().map(serialize_broken_import).collect::<Vec<_>>(),
-            "orphanFiles": _report.findings.orphan_files.iter().map(serialize_orphan_file).collect::<Vec<_>>(),
-            "deadExports": _report.findings.dead_exports.iter().map(serialize_dead_export).collect::<Vec<_>>(),
-            "unusedImports": _report.findings.unused_imports.iter().map(serialize_unused_import).collect::<Vec<_>>(),
-            "routeEntrypoints": _report.findings.route_entrypoints.iter().map(serialize_route_entrypoint).collect::<Vec<_>>(),
-            "deletionCandidates": _report.findings.deletion_candidates.iter().map(serialize_deletion_candidate).collect::<Vec<_>>(),
+        top_level::SUMMARY: serialize_summary(&_report.summary),
+        top_level::FINDINGS: {
+            findings::BROKEN_IMPORTS: _report.findings.broken_imports.iter().map(serialize_broken_import).collect::<Vec<_>>(),
+            findings::ORPHAN_FILES: _report.findings.orphan_files.iter().map(serialize_orphan_file).collect::<Vec<_>>(),
+            findings::DEAD_EXPORTS: _report.findings.dead_exports.iter().map(serialize_dead_export).collect::<Vec<_>>(),
+            findings::UNUSED_IMPORTS: _report.findings.unused_imports.iter().map(serialize_unused_import).collect::<Vec<_>>(),
+            findings::ROUTE_ENTRYPOINTS: _report.findings.route_entrypoints.iter().map(serialize_route_entrypoint).collect::<Vec<_>>(),
+            findings::DELETION_CANDIDATES: _report.findings.deletion_candidates.iter().map(serialize_deletion_candidate).collect::<Vec<_>>(),
         },
-        "graph": {
-            "modules": _report.modules.iter().map(serialize_module).collect::<Vec<_>>(),
+        top_level::GRAPH: {
+            graph::MODULES: _report.modules.iter().map(serialize_module).collect::<Vec<_>>(),
         },
     });
 
@@ -166,27 +169,45 @@ pub fn format_markdown_report(report: &ReportV2, report_path: &Path) -> KratosRe
     crate::report_format::format_markdown_report(report, report_path)
 }
 
-fn serialize_summary(summary: &SummaryCounts) -> Value {
+fn serialize_summary(summary_counts: &SummaryCounts) -> Value {
     let mut summary_value = serde_json::Map::new();
-    summary_value.insert("filesScanned".to_string(), json!(summary.files_scanned));
-    summary_value.insert("entrypoints".to_string(), json!(summary.entrypoints));
-    summary_value.insert("brokenImports".to_string(), json!(summary.broken_imports));
-    summary_value.insert("orphanFiles".to_string(), json!(summary.orphan_files));
-    summary_value.insert("deadExports".to_string(), json!(summary.dead_exports));
-    summary_value.insert("unusedImports".to_string(), json!(summary.unused_imports));
     summary_value.insert(
-        "routeEntrypoints".to_string(),
-        json!(summary.route_entrypoints),
+        summary::FILES_SCANNED.to_string(),
+        json!(summary_counts.files_scanned),
     );
     summary_value.insert(
-        "deletionCandidates".to_string(),
-        json!(summary.deletion_candidates),
+        summary::ENTRYPOINTS.to_string(),
+        json!(summary_counts.entrypoints),
+    );
+    summary_value.insert(
+        summary::BROKEN_IMPORTS.to_string(),
+        json!(summary_counts.broken_imports),
+    );
+    summary_value.insert(
+        summary::ORPHAN_FILES.to_string(),
+        json!(summary_counts.orphan_files),
+    );
+    summary_value.insert(
+        summary::DEAD_EXPORTS.to_string(),
+        json!(summary_counts.dead_exports),
+    );
+    summary_value.insert(
+        summary::UNUSED_IMPORTS.to_string(),
+        json!(summary_counts.unused_imports),
+    );
+    summary_value.insert(
+        summary::ROUTE_ENTRYPOINTS.to_string(),
+        json!(summary_counts.route_entrypoints),
+    );
+    summary_value.insert(
+        summary::DELETION_CANDIDATES.to_string(),
+        json!(summary_counts.deletion_candidates),
     );
 
-    if summary.suppressed_findings > 0 {
+    if summary_counts.suppressed_findings > 0 {
         summary_value.insert(
-            "suppressedFindings".to_string(),
-            json!(summary.suppressed_findings),
+            summary::SUPPRESSED_FINDINGS.to_string(),
+            json!(summary_counts.suppressed_findings),
         );
     }
 
@@ -195,67 +216,67 @@ fn serialize_summary(summary: &SummaryCounts) -> Value {
 
 fn serialize_broken_import(item: &BrokenImportFinding) -> Value {
     json!({
-        "file": path_to_string(&item.file),
-        "source": item.source,
-        "kind": import_kind_to_string(&item.kind),
+        finding_field::FILE: path_to_string(&item.file),
+        finding_field::SOURCE: item.source,
+        finding_field::KIND: import_kind_to_string(&item.kind),
     })
 }
 
 fn serialize_orphan_file(item: &OrphanFileFinding) -> Value {
     json!({
-        "file": path_to_string(&item.file),
-        "kind": orphan_kind_to_string(&item.kind),
-        "reason": item.reason,
-        "confidence": round_confidence(item.confidence),
+        finding_field::FILE: path_to_string(&item.file),
+        finding_field::KIND: orphan_kind_to_string(&item.kind),
+        finding_field::REASON: item.reason,
+        finding_field::CONFIDENCE: round_confidence(item.confidence),
     })
 }
 
 fn serialize_dead_export(item: &DeadExportFinding) -> Value {
     json!({
-        "file": path_to_string(&item.file),
-        "exportName": item.export_name,
-        "exportKind": export_kind_to_string(&item.export_kind),
-        "reason": item.reason,
-        "confidence": round_confidence(item.confidence),
-        "importedByCount": item.imported_by_count,
-        "usedExportNames": item.used_export_names,
-        "hasNamespaceOrUnknownUsage": item.has_namespace_or_unknown_usage,
+        finding_field::FILE: path_to_string(&item.file),
+        finding_field::EXPORT_NAME: item.export_name,
+        finding_field::EXPORT_KIND: export_kind_to_string(&item.export_kind),
+        finding_field::REASON: item.reason,
+        finding_field::CONFIDENCE: round_confidence(item.confidence),
+        finding_field::IMPORTED_BY_COUNT: item.imported_by_count,
+        finding_field::USED_EXPORT_NAMES: item.used_export_names,
+        finding_field::HAS_NAMESPACE_OR_UNKNOWN_USAGE: item.has_namespace_or_unknown_usage,
     })
 }
 
 fn serialize_unused_import(item: &UnusedImportFinding) -> Value {
     json!({
-        "file": path_to_string(&item.file),
-        "source": item.source,
-        "local": item.local,
-        "imported": item.imported,
+        finding_field::FILE: path_to_string(&item.file),
+        finding_field::SOURCE: item.source,
+        finding_field::LOCAL: item.local,
+        finding_field::IMPORTED: item.imported,
     })
 }
 
 fn serialize_route_entrypoint(item: &RouteEntrypointFinding) -> Value {
     json!({
-        "file": path_to_string(&item.file),
-        "kind": entrypoint_kind_to_string(&item.kind),
+        finding_field::FILE: path_to_string(&item.file),
+        finding_field::KIND: entrypoint_kind_to_string(&item.kind),
     })
 }
 
 fn serialize_deletion_candidate(item: &DeletionCandidateFinding) -> Value {
     json!({
-        "file": path_to_string(&item.file),
-        "reason": item.reason,
-        "confidence": round_confidence(item.confidence),
-        "safe": item.safe,
+        finding_field::FILE: path_to_string(&item.file),
+        finding_field::REASON: item.reason,
+        finding_field::CONFIDENCE: round_confidence(item.confidence),
+        finding_field::SAFE: item.safe,
     })
 }
 
-fn serialize_module(module: &ModuleRecord) -> Value {
+fn serialize_module(module_record: &ModuleRecord) -> Value {
     json!({
-        "file": path_to_string(&module.file_path),
-        "relativePath": module.relative_path,
-        "entrypointKind": module.entrypoint_kind.as_ref().map(entrypoint_kind_to_string),
-        "importedByCount": module.imported_by_count.max(module.imported_by.len()),
-        "importCount": module.import_count.max(module.resolved_imports.len()),
-        "exportCount": module.export_count.max(module.exports.len()),
+        module::FILE: path_to_string(&module_record.file_path),
+        module::RELATIVE_PATH: module_record.relative_path,
+        module::ENTRYPOINT_KIND: module_record.entrypoint_kind.as_ref().map(entrypoint_kind_to_string),
+        module::IMPORTED_BY_COUNT: module_record.imported_by_count.max(module_record.imported_by.len()),
+        module::IMPORT_COUNT: module_record.import_count.max(module_record.resolved_imports.len()),
+        module::EXPORT_COUNT: module_record.export_count.max(module_record.exports.len()),
     })
 }
 

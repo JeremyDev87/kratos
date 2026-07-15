@@ -12,6 +12,11 @@ pub fn repo_root() -> PathBuf {
 pub fn copy_demo_app(label: &str) -> PathBuf {
     let destination = temp_dir(label).join("demo-app");
     copy_directory(&repo_root().join("fixtures/demo-app"), &destination);
+    let generated_report_dir = destination.join(".kratos");
+    if generated_report_dir.exists() {
+        std::fs::remove_dir_all(&generated_report_dir)
+            .expect("copied demo app should start without generated reports");
+    }
     destination
 }
 

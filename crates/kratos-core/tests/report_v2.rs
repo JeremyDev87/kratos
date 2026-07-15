@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kratos_core::analyze::analyze_project;
-use kratos_core::model::ExportKind;
+use kratos_core::model::{ExportKind, UnusedImportFinding};
 use kratos_core::report::{
     format_markdown_report, format_summary_report, parse_report_json, serialize_report_pretty,
     validate_report_version,
@@ -162,6 +162,121 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
         normalized_reparsed["graph"]["modules"],
         normalized["graph"]["modules"]
     );
+}
+
+#[test]
+fn report_v2_writer_keys_match_the_frozen_v1_contract() {
+    const TOP_LEVEL_KEYS: &[&str] = &[
+        "schemaVersion",
+        "generatedAt",
+        "project",
+        "summary",
+        "findings",
+        "graph",
+    ];
+    const PROJECT_KEYS: &[&str] = &["root", "configPath"];
+    const SUMMARY_KEYS: &[&str] = &[
+        "filesScanned",
+        "entrypoints",
+        "brokenImports",
+        "orphanFiles",
+        "deadExports",
+        "unusedImports",
+        "routeEntrypoints",
+        "deletionCandidates",
+    ];
+    const FINDING_COLLECTION_KEYS: &[&str] = &[
+        "brokenImports",
+        "orphanFiles",
+        "deadExports",
+        "unusedImports",
+        "routeEntrypoints",
+        "deletionCandidates",
+    ];
+    const BROKEN_IMPORT_KEYS: &[&str] = &["file", "source", "kind"];
+    const ORPHAN_FILE_KEYS: &[&str] = &["file", "kind", "reason", "confidence"];
+    const DEAD_EXPORT_KEYS: &[&str] = &[
+        "file",
+        "exportName",
+        "exportKind",
+        "reason",
+        "confidence",
+        "importedByCount",
+        "usedExportNames",
+        "hasNamespaceOrUnknownUsage",
+    ];
+    const UNUSED_IMPORT_KEYS: &[&str] = &["file", "source", "local", "imported"];
+    const ROUTE_ENTRYPOINT_KEYS: &[&str] = &["file", "kind"];
+    const DELETION_CANDIDATE_KEYS: &[&str] = &["file", "reason", "confidence", "safe"];
+    const GRAPH_KEYS: &[&str] = &["modules"];
+    const MODULE_KEYS: &[&str] = &[
+        "file",
+        "relativePath",
+        "entrypointKind",
+        "importedByCount",
+        "importCount",
+        "exportCount",
+    ];
+
+    let repo_root = repo_root();
+    let demo_root = repo_root.join("fixtures/demo-app");
+    let mut report = analyze_project(&demo_root).expect("demo app should analyze");
+    report.findings.unused_imports.push(UnusedImportFinding {
+        file: demo_root.join("src/components/LiveCard.tsx"),
+        source: "./fixture".to_string(),
+        local: "fixtureLocal".to_string(),
+        imported: "fixtureExport".to_string(),
+    });
+    report.summary.unused_imports += 1;
+
+    let serialized = serialize_report_pretty(&report).expect("report should serialize");
+    let value: Value = serde_json::from_str(&serialized).expect("serialized report should parse");
+
+    assert_eq!(value["schemaVersion"], Value::from(2));
+    assert_object_keys(&value, TOP_LEVEL_KEYS);
+    assert_object_keys(&value["project"], PROJECT_KEYS);
+    assert_object_keys(&value["summary"], SUMMARY_KEYS);
+    assert!(
+        value["summary"].get("suppressedFindings").is_none(),
+        "suppressedFindings stays optional and is omitted when zero"
+    );
+    assert_object_keys(&value["findings"], FINDING_COLLECTION_KEYS);
+
+    let finding_values = &value["findings"];
+    assert_object_keys(&finding_values["brokenImports"][0], BROKEN_IMPORT_KEYS);
+    assert_object_keys(&finding_values["orphanFiles"][0], ORPHAN_FILE_KEYS);
+    assert!(
+        finding_values["orphanFiles"][0]["confidence"]
+            .as_f64()
+            .is_some(),
+        "orphan confidence is a required numeric contract field"
+    );
+    assert_object_keys(&finding_values["deadExports"][0], DEAD_EXPORT_KEYS);
+    assert_object_keys(&finding_values["unusedImports"][0], UNUSED_IMPORT_KEYS);
+    assert_eq!(finding_values["unusedImports"][0]["source"], "./fixture");
+    assert_eq!(finding_values["unusedImports"][0]["local"], "fixtureLocal");
+    assert_eq!(
+        finding_values["unusedImports"][0]["imported"],
+        "fixtureExport"
+    );
+    assert_object_keys(
+        &finding_values["routeEntrypoints"][0],
+        ROUTE_ENTRYPOINT_KEYS,
+    );
+    assert_object_keys(
+        &finding_values["deletionCandidates"][0],
+        DELETION_CANDIDATE_KEYS,
+    );
+    assert_object_keys(&value["graph"], GRAPH_KEYS);
+
+    let modules = value["graph"]["modules"]
+        .as_array()
+        .expect("modules should be an array");
+    assert!(
+        !modules.is_empty(),
+        "demo report should include module evidence"
+    );
+    assert_object_keys(&modules[0], MODULE_KEYS);
 }
 
 #[test]
@@ -707,6 +822,16 @@ fn strip_orphan_confidence(value: &Value) -> Value {
     }
 
     stripped
+}
+
+fn assert_object_keys(value: &Value, expected_keys: &[&str]) {
+    let object = value.as_object().expect("value should be an object");
+    let mut actual_keys = object.keys().map(String::as_str).collect::<Vec<_>>();
+    actual_keys.sort_unstable();
+    let mut expected_keys = expected_keys.to_vec();
+    expected_keys.sort_unstable();
+
+    assert_eq!(actual_keys, expected_keys);
 }
 
 fn repo_root() -> PathBuf {
