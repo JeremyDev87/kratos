@@ -2,10 +2,20 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kratos_core::clean::{
-    clean_from_report_with_min_confidence, current_file_identity, current_parent_identity,
-    plan_clean_candidates,
+    clean_from_report_with_min_confidence_detailed, current_file_identity, current_parent_identity,
+    plan_clean_candidates, CleanOutcome,
 };
 use kratos_core::model::{CleanCandidateFingerprint, DeletionCandidateFinding, ReportV2};
+
+#[test]
+fn legacy_clean_outcome_struct_literal_remains_source_compatible() {
+    let outcome = CleanOutcome {
+        deleted_files: 1,
+        skipped_files: 2,
+    };
+    assert_eq!(outcome.deleted_files, 1);
+    assert_eq!(outcome.skipped_files, 2);
+}
 use sha2::{Digest, Sha256};
 
 #[test]
@@ -36,12 +46,12 @@ fn plan_clean_candidates_splits_deletion_targets_and_threshold_skips() {
 }
 
 #[test]
-fn clean_from_report_with_min_confidence_skips_low_confidence_targets() {
+fn clean_from_report_with_min_confidence_detailed_skips_low_confidence_targets() {
     let temp_root = temp_dir("clean-threshold-apply");
     let report = report_with_candidates(&temp_root, &[("src/high.ts", 0.96), ("src/low.ts", 0.40)]);
 
     let outcome =
-        clean_from_report_with_min_confidence(&report, 0.9).expect("clean should succeed");
+        clean_from_report_with_min_confidence_detailed(&report, 0.9).expect("clean should succeed");
 
     assert_eq!(outcome.quarantined_files.len(), 1);
     assert_eq!(outcome.skipped_files, 1);
@@ -50,11 +60,11 @@ fn clean_from_report_with_min_confidence_skips_low_confidence_targets() {
 }
 
 #[test]
-fn clean_from_report_with_min_confidence_rejects_invalid_thresholds() {
+fn clean_from_report_with_min_confidence_detailed_rejects_invalid_thresholds() {
     let temp_root = temp_dir("clean-threshold-invalid");
     let report = report_with_candidates(&temp_root, &[("src/high.ts", 0.96)]);
 
-    let error = clean_from_report_with_min_confidence(&report, 1.1)
+    let error = clean_from_report_with_min_confidence_detailed(&report, 1.1)
         .expect_err("threshold should be rejected");
     assert!(
         error

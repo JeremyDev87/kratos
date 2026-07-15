@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use kratos_core::clean::{clean_from_report_with_min_confidence, CleanSafetyStatus};
+use kratos_core::clean::{clean_from_report_with_min_confidence_detailed, CleanSafetyStatus};
 use kratos_core::clean_preview::{build_clean_preview, CleanPreviewItem, CleanPreviewPlan};
 use kratos_core::config::load_clean_min_confidence;
 use kratos_core::model::DeletionCandidateFinding;
@@ -49,9 +49,9 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
         return Ok(0);
     }
 
-    let outcome = clean_from_report_with_min_confidence(&report, min_confidence)?;
+    let outcome = clean_from_report_with_min_confidence_detailed(&report, min_confidence)?;
     let mut output = format!(
-        "Kratos clean: 파일 {}개를 코드 경로에서 격리했습니다.\n보존된 격리 파일: {}\n건너뛴 파일: {}\n실패한 파일: {}",
+        "Kratos clean: 파일 {}개를 코드 경로에서 격리했습니다.\n현재 경로가 확인된 격리 파일: {}\n건너뛴 파일: {}\n실패한 파일: {}",
         outcome.deleted_files,
         outcome.quarantined_files.len(),
         outcome.skipped_files,
@@ -59,7 +59,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     );
     for quarantined in &outcome.quarantined_files {
         output.push_str(&format!(
-            "\n- 격리 보존: {}",
+            "\n- 확인된 격리 보존: {}",
             relative_path(quarantined, &report.root)
         ));
     }

@@ -95,7 +95,7 @@ fn display_command_summary(spec: CommandSpec) -> &'static str {
         scan::NAME => "코드베이스를 분석하고 최신 리포트를 저장합니다.",
         report::NAME => "저장된 리포트를 summary, json, markdown 형식으로 출력합니다.",
         diff::NAME => "저장된 두 리포트를 비교합니다.",
-        clean::NAME => "삭제 후보를 표시하거나 --apply로 삭제합니다.",
+        clean::NAME => "삭제 후보를 표시하거나 --apply로 보존 격리합니다.",
         _ => spec.summary,
     }
 }
