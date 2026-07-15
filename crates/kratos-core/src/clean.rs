@@ -37,6 +37,8 @@ pub struct CleanOutcome {
     /// Compatibility count for paths moved out of the code tree. The file bytes
     /// remain under `quarantined_files`; this does not mean a physical unlink.
     pub deleted_files: usize,
+    /// Last-known paths for every retained quarantine object, including residue
+    /// left by restored, skipped, or failed candidates.
     pub quarantined_files: Vec<PathBuf>,
     pub skipped_files: usize,
     pub failed_files: Vec<CleanFailure>,
@@ -317,11 +319,21 @@ where
                 outcome.deleted_files += 1;
                 outcome.quarantined_files.push(quarantined_path);
             }
-            QuarantineOutcome::Skipped => outcome.skipped_files += 1,
-            QuarantineOutcome::Failed(error) => outcome.failed_files.push(CleanFailure {
-                file: candidate_path,
-                error,
-            }),
+            QuarantineOutcome::Skipped(retained_path) => {
+                outcome.skipped_files += 1;
+                if let Some(path) = retained_path {
+                    outcome.quarantined_files.push(path);
+                }
+            }
+            QuarantineOutcome::Failed(error, retained_path) => {
+                if let Some(path) = retained_path {
+                    outcome.quarantined_files.push(path);
+                }
+                outcome.failed_files.push(CleanFailure {
+                    file: candidate_path,
+                    error,
+                });
+            }
         }
     }
 
@@ -352,8 +364,8 @@ fn snapshot_from_entry(entry: &CleanCandidateFingerprint) -> Option<FileSnapshot
 #[cfg_attr(not(unix), allow(dead_code))]
 enum QuarantineOutcome {
     Quarantined(PathBuf),
-    Skipped,
-    Failed(String),
+    Skipped(Option<PathBuf>),
+    Failed(String, Option<PathBuf>),
 }
 
 #[cfg(unix)]
@@ -369,33 +381,33 @@ where
     G: FnMut(&Path),
 {
     let Some(parent_path) = candidate_path.parent() else {
-        return QuarantineOutcome::Skipped;
+        return QuarantineOutcome::Skipped(None);
     };
     if !is_safe_clean_candidate(report_root, candidate_path) {
-        return QuarantineOutcome::Skipped;
+        return QuarantineOutcome::Skipped(None);
     }
 
     let canonical_parent = match std::fs::canonicalize(parent_path) {
         Ok(path) => path,
-        Err(_) => return QuarantineOutcome::Skipped,
+        Err(_) => return QuarantineOutcome::Skipped(None),
     };
     let source_parent = match open_directory(&canonical_parent) {
         Ok(directory) => directory,
-        Err(_) => return QuarantineOutcome::Skipped,
+        Err(_) => return QuarantineOutcome::Skipped(None),
     };
     if directory_identity_from_file(&source_parent).as_deref()
         != Some(expected.parent_identity.as_str())
     {
-        return QuarantineOutcome::Skipped;
+        return QuarantineOutcome::Skipped(None);
     }
 
     let candidate_name = match cstring_file_name(candidate_path) {
         Ok(name) => name,
-        Err(error) => return QuarantineOutcome::Failed(error.to_string()),
+        Err(error) => return QuarantineOutcome::Failed(error.to_string(), None),
     };
     let quarantine = match QuarantineDirectory::create(report_root) {
         Ok(directory) => directory,
-        Err(error) => return QuarantineOutcome::Failed(error.to_string()),
+        Err(error) => return QuarantineOutcome::Failed(error.to_string(), None),
     };
     let quarantined_path = quarantine.path.join("candidate");
 
@@ -408,9 +420,9 @@ where
     ) {
         quarantine.remove_empty();
         return if error.kind() == ErrorKind::NotFound {
-            QuarantineOutcome::Skipped
+            QuarantineOutcome::Skipped(None)
         } else {
-            QuarantineOutcome::Failed(error.to_string())
+            QuarantineOutcome::Failed(error.to_string(), None)
         };
     }
 
@@ -424,7 +436,6 @@ where
             &source_parent,
             &candidate_name,
             &quarantined_path,
-            QuarantineOutcome::Skipped,
         );
     }
 
@@ -439,23 +450,28 @@ where
             &source_parent,
             &candidate_name,
             &quarantined_path,
-            QuarantineOutcome::Skipped,
         );
     }
 
     match std::fs::symlink_metadata(candidate_path) {
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Ok(_) => {
-            return QuarantineOutcome::Failed(format!(
-                "원래 코드 경로가 다시 생성되어 격리 완료로 보고하지 않습니다. 보존 위치: {}",
-                quarantined_path.display()
-            ));
+            return QuarantineOutcome::Failed(
+                format!(
+                    "원래 코드 경로가 다시 생성되어 격리 완료로 보고하지 않습니다. 보존 위치: {}",
+                    quarantined_path.display()
+                ),
+                Some(quarantined_path),
+            );
         }
         Err(error) => {
-            return QuarantineOutcome::Failed(format!(
-                "원래 코드 경로의 부재를 확인하지 못했습니다. 보존 위치: {} ({error})",
-                quarantined_path.display()
-            ));
+            return QuarantineOutcome::Failed(
+                format!(
+                    "원래 코드 경로의 부재를 확인하지 못했습니다. 보존 위치: {} ({error})",
+                    quarantined_path.display()
+                ),
+                Some(quarantined_path),
+            );
         }
     }
 
@@ -479,7 +495,7 @@ where
 {
     // Platforms without descriptor-relative stable identity support never receive
     // deletion-ready evidence. Keep this final boundary fail closed as well.
-    QuarantineOutcome::Skipped
+    QuarantineOutcome::Skipped(None)
 }
 
 #[cfg(unix)]
@@ -603,12 +619,22 @@ fn quarantine_candidate_matches(directory: &File, expected: &FileSnapshot) -> bo
 }
 
 #[cfg(unix)]
+fn retained_quarantine_path(
+    quarantine: &QuarantineDirectory,
+    quarantined_path: &Path,
+) -> Option<PathBuf> {
+    open_file_at(&quarantine.directory, quarantine_candidate_name())
+        .and_then(inspect_open_regular_file)
+        .ok()
+        .map(|_| quarantined_path.to_path_buf())
+}
+
+#[cfg(unix)]
 fn restore_or_preserve(
     quarantine: &QuarantineDirectory,
     source_parent: &File,
     candidate_name: &CStr,
     quarantined_path: &Path,
-    restored_outcome: QuarantineOutcome,
 ) -> QuarantineOutcome {
     match link_at(
         &quarantine.directory,
@@ -616,11 +642,16 @@ fn restore_or_preserve(
         source_parent,
         candidate_name,
     ) {
-        Ok(()) => restored_outcome,
-        Err(error) => QuarantineOutcome::Failed(format!(
-            "검증 실패 파일을 복원하지 못했습니다. 보존 위치: {} ({error})",
-            quarantined_path.display()
-        )),
+        Ok(()) => {
+            QuarantineOutcome::Skipped(retained_quarantine_path(quarantine, quarantined_path))
+        }
+        Err(error) => QuarantineOutcome::Failed(
+            format!(
+                "검증 실패 파일을 복원하지 못했습니다. 보존 위치: {} ({error})",
+                quarantined_path.display()
+            ),
+            retained_quarantine_path(quarantine, quarantined_path),
+        ),
     }
 }
 
@@ -836,7 +867,7 @@ mod tests {
         })
         .expect("clean should stay fail closed");
 
-        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.quarantined_files.len(), 1);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -901,7 +932,7 @@ mod tests {
         })
         .expect("clean should stay fail closed");
 
-        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.quarantined_files.len(), 1);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -939,7 +970,7 @@ mod tests {
         )
         .expect("verified quarantine deletion should fail closed");
 
-        assert_eq!(outcome.quarantined_files.len(), 0, "{outcome:?}");
+        assert_eq!(outcome.quarantined_files.len(), 1, "{outcome:?}");
         assert_eq!(outcome.skipped_files, 0);
         assert_eq!(outcome.failed_files.len(), 1);
         assert_eq!(
@@ -987,7 +1018,7 @@ mod tests {
         })
         .expect("clean should restore the redirected pathname");
 
-        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.quarantined_files.len(), 1);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -1023,7 +1054,7 @@ mod tests {
         )
         .expect("clean should restore from the pinned quarantine descriptor");
 
-        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.quarantined_files.len(), 1);
         assert_eq!(outcome.skipped_files, 1);
         assert!(outcome.failed_files.is_empty());
         assert_eq!(
@@ -1097,7 +1128,7 @@ mod tests {
         )
         .expect("accounting mismatch should be reported per file");
 
-        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.quarantined_files.len(), 1);
         assert_eq!(outcome.failed_files.len(), 1);
         assert!(candidate.exists());
         assert!(outcome.failed_files[0]
