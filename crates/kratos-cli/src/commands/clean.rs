@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use kratos_core::clean::clean_from_report_with_min_confidence;
+use kratos_core::clean::{clean_from_report_with_min_confidence, CleanSafetyStatus};
 use kratos_core::clean_preview::{build_clean_preview, CleanPreviewItem, CleanPreviewPlan};
 use kratos_core::config::load_clean_min_confidence;
 use kratos_core::model::DeletionCandidateFinding;
@@ -50,14 +50,25 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     }
 
     let outcome = clean_from_report_with_min_confidence(&report, min_confidence)?;
-    write_output(
-        stdout,
-        &format!(
-            "Kratos clean: 파일 {}개를 삭제했습니다.\n건너뛴 파일: {}",
-            outcome.deleted_files, outcome.skipped_files
-        ),
-    )?;
-    Ok(0)
+    let mut output = format!(
+        "Kratos clean: 파일 {}개를 삭제했습니다.\n건너뛴 파일: {}\n실패한 파일: {}",
+        outcome.deleted_files,
+        outcome.skipped_files,
+        outcome.failed_files.len()
+    );
+    for failure in &outcome.failed_files {
+        output.push_str(&format!(
+            "\n- {}: {}",
+            relative_path(&failure.file, &report.root),
+            failure.error
+        ));
+    }
+    write_output(stdout, &output)?;
+    Ok(if outcome.failed_files.is_empty() {
+        0
+    } else {
+        1
+    })
 }
 
 fn parse_args(args: &[String]) -> KratosResult<CleanArgs> {
@@ -136,11 +147,31 @@ fn format_clean_preview_plan(plan: &CleanPreviewPlan, report_root: &Path) -> Str
     let mut lines = vec![
         "Kratos clean 미리보기입니다.".to_string(),
         String::new(),
-        format!("삭제 대상: {}", plan.items.len()),
+        format!("삭제 대상: {}", plan.deletion_target_paths.len()),
     ];
 
-    for item in &plan.items {
+    for item in plan
+        .items
+        .iter()
+        .filter(|item| item.safety_status == CleanSafetyStatus::Ready)
+    {
         lines.extend(format_preview_item(item));
+    }
+
+    let safety_skipped = plan
+        .items
+        .iter()
+        .filter(|item| item.safety_status != CleanSafetyStatus::Ready)
+        .collect::<Vec<_>>();
+    if !safety_skipped.is_empty() {
+        lines.push(String::new());
+        lines.push(format!(
+            "안전 검증으로 건너뛴 대상: {}",
+            safety_skipped.len()
+        ));
+        for item in safety_skipped {
+            lines.extend(format_preview_item(item));
+        }
     }
 
     if !plan.threshold_skipped_targets.is_empty() {
@@ -178,6 +209,10 @@ fn format_preview_item(item: &CleanPreviewItem) -> Vec<String> {
         format!("- {}", item.relative_path),
         format!("  신뢰도: {:.2}", item.confidence),
         format!("  사유: {}", display_known_reason(&item.reason)),
+        format!(
+            "  안전 상태: {}",
+            display_safety_status(&item.safety_status)
+        ),
         format!("  상태: {exists_state}"),
         "  미리보기:".to_string(),
     ];
@@ -193,6 +228,22 @@ fn format_preview_item(item: &CleanPreviewItem) -> Vec<String> {
     }
 
     lines
+}
+
+fn display_safety_status(status: &CleanSafetyStatus) -> &'static str {
+    match status {
+        CleanSafetyStatus::Ready => "검증됨",
+        CleanSafetyStatus::PathOutsideRoot => "프로젝트 루트 밖 경로",
+        CleanSafetyStatus::DuplicateCandidate => "삭제 후보 경로 중복",
+        CleanSafetyStatus::UnsafeFlag => "safe=false",
+        CleanSafetyStatus::UnsupportedFingerprintAlgorithm => "지원하지 않는 fingerprint 알고리즘",
+        CleanSafetyStatus::MissingFingerprint => "fingerprint 없음",
+        CleanSafetyStatus::MissingIdentity => "파일 identity 없음",
+        CleanSafetyStatus::DuplicateFingerprint => "fingerprint 중복",
+        CleanSafetyStatus::FingerprintUnavailable => "현재 fingerprint 확인 불가",
+        CleanSafetyStatus::FingerprintMismatch => "스캔 후 파일 변경됨",
+        CleanSafetyStatus::IdentityMismatch => "스캔 후 파일 변경됨",
+    }
 }
 
 fn format_candidate_line(candidate: &DeletionCandidateFinding, report_root: &Path) -> String {

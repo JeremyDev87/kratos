@@ -5,6 +5,7 @@ pub mod config;
 pub mod discover;
 pub mod entrypoints;
 pub mod error;
+mod fingerprint;
 mod ignore;
 pub mod jsonc;
 pub mod model;

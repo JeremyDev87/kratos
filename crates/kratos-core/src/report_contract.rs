@@ -5,8 +5,10 @@
 //! newer schema versions, but v1 writers must not rename or remove these keys
 //! without an explicit schema/version migration.
 
-/// Stable schema version emitted by the v1 CLI/report contract.
-pub(crate) const REPORT_SCHEMA_VERSION: u32 = 2;
+use crate::model::REPORT_CURRENT;
+
+/// Current schema version emitted after the explicit clean-safety migration.
+pub(crate) const REPORT_SCHEMA_VERSION: u32 = REPORT_CURRENT;
 
 pub(crate) mod top_level {
     pub(crate) const SCHEMA_VERSION: &str = "schemaVersion";
@@ -14,7 +16,17 @@ pub(crate) mod top_level {
     pub(crate) const PROJECT: &str = "project";
     pub(crate) const SUMMARY: &str = "summary";
     pub(crate) const FINDINGS: &str = "findings";
+    pub(crate) const CLEAN_SAFETY: &str = "cleanSafety";
     pub(crate) const GRAPH: &str = "graph";
+}
+
+pub(crate) mod clean_safety {
+    pub(crate) const FINGERPRINT_ALGORITHM: &str = "fingerprintAlgorithm";
+    pub(crate) const CANDIDATES: &str = "candidates";
+    pub(crate) const FILE: &str = "file";
+    pub(crate) const FINGERPRINT: &str = "fingerprint";
+    pub(crate) const IDENTITY: &str = "identity";
+    pub(crate) const PARENT_IDENTITY: &str = "parentIdentity";
 }
 
 pub(crate) mod project {

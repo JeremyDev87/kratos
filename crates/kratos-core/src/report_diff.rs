@@ -555,11 +555,10 @@ fn route_entrypoint_key(item: &RouteEntrypointFinding, report_root: &Path) -> St
 
 fn deletion_candidate_key(item: &DeletionCandidateFinding, report_root: &Path) -> String {
     format!(
-        "{}|{}|{}|{}",
+        "{}|{}|{}",
         finding_file_key(&item.file, report_root),
         item.reason,
-        item.confidence.to_bits(),
-        item.safe
+        item.confidence.to_bits()
     )
 }
 

@@ -122,7 +122,48 @@ test("packed root package boots the actual native addon for the current platform
   assert.equal(runResult.status, 0, runResult.stderr || runResult.stdout);
 
   const report = JSON.parse(runResult.stdout);
-  assert.equal(report.schemaVersion, 2);
+  assert.equal(report.schemaVersion, 3);
+  assert.equal(report.cleanSafety.fingerprintAlgorithm, "sha256");
+  assert.equal(report.cleanSafety.candidates.length, report.findings.deletionCandidates.length);
+  assert.deepEqual(
+    report.cleanSafety.candidates.map((candidate) => candidate.file).sort(),
+    report.findings.deletionCandidates.map((candidate) => candidate.file).sort(),
+  );
+  if (process.platform === "win32") {
+    assert.equal(
+      report.cleanSafety.candidates.every(
+        (candidate) =>
+          typeof candidate.fingerprint === "string" &&
+          candidate.fingerprint.length === 64 &&
+          candidate.identity === null &&
+          candidate.parentIdentity === null,
+      ),
+      true,
+    );
+    assert.equal(
+      report.findings.deletionCandidates.every((candidate) => candidate.safe === false),
+      true,
+    );
+  } else {
+    assert.equal(
+      report.cleanSafety.candidates.every(
+        (candidate) => typeof candidate.fingerprint === "string" && candidate.fingerprint.length === 64,
+      ),
+      true,
+    );
+    assert.equal(
+      report.cleanSafety.candidates.every(
+        (candidate) => typeof candidate.identity === "string" && candidate.identity.length > 0,
+      ),
+      true,
+    );
+    assert.equal(
+      report.cleanSafety.candidates.every(
+        (candidate) => typeof candidate.parentIdentity === "string" && candidate.parentIdentity.length > 0,
+      ),
+      true,
+    );
+  }
   assert.equal(path.resolve(report.project.root), demoAppPath);
 });
 

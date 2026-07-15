@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use kratos_core::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportKind,
-    FindingSet, ImportKind, ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2,
-    RouteEntrypointFinding, SummaryCounts, UnusedImportFinding,
+    BrokenImportFinding, CleanCandidateFingerprint, DeadExportFinding, DeletionCandidateFinding,
+    EntrypointKind, ExportKind, FindingSet, ImportKind, ModuleRecord, OrphanFileFinding,
+    OrphanKind, ReportV2, RouteEntrypointFinding, SummaryCounts, UnusedImportFinding,
 };
 use kratos_core::report_diff::{
     diff_reports, format_diff_json, format_diff_markdown, format_diff_summary,
@@ -135,6 +135,87 @@ fn diff_reports_only_tracks_finding_changes_and_ignores_report_metadata() {
             true
         )]
     );
+}
+
+#[test]
+fn diff_reports_ignore_clean_safety_fingerprint_changes() {
+    let findings = finding_set(
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        vec![deletion_candidate(
+            "/repo/src/delete.ts",
+            "unused",
+            0.98,
+            true,
+        )],
+    );
+    let mut before = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        findings.clone(),
+        vec![],
+    );
+    let mut after = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        findings,
+        vec![],
+    );
+    before.clean_safety.candidates = vec![CleanCandidateFingerprint {
+        file: "/repo/src/delete.ts".into(),
+        fingerprint: Some("before".to_string()),
+        identity: Some("before-identity".to_string()),
+        parent_identity: Some("before-parent".to_string()),
+    }];
+    after.clean_safety.candidates = vec![CleanCandidateFingerprint {
+        file: "/repo/src/delete.ts".into(),
+        fingerprint: Some("after".to_string()),
+        identity: Some("after-identity".to_string()),
+        parent_identity: Some("after-parent".to_string()),
+    }];
+
+    let diff = diff_reports(&before, &after);
+
+    assert_eq!(diff.summary.deletion_candidates.introduced, 0);
+    assert_eq!(diff.summary.deletion_candidates.resolved, 0);
+    assert_eq!(diff.summary.deletion_candidates.persisted, 1);
+}
+
+#[test]
+fn diff_reports_treat_safe_migration_metadata_as_persisted() {
+    let before_finding = deletion_candidate("/repo/src/delete.ts", "unused", 0.98, false);
+    let mut after_finding = before_finding.clone();
+    after_finding.safe = true;
+    let mut before = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(vec![], vec![], vec![], vec![], vec![], vec![before_finding]),
+        vec![],
+    );
+    before.version = 2;
+    let after = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(vec![], vec![], vec![], vec![], vec![], vec![after_finding]),
+        vec![],
+    );
+
+    let diff = diff_reports(&before, &after);
+
+    assert_eq!(diff.summary.deletion_candidates.introduced, 0);
+    assert_eq!(diff.summary.deletion_candidates.resolved, 0);
+    assert_eq!(diff.summary.deletion_candidates.persisted, 1);
 }
 
 #[test]
@@ -534,6 +615,7 @@ fn report_v2(
         config_path: config_path.map(PathBuf::from),
         summary,
         findings,
+        clean_safety: Default::default(),
         modules,
     }
 }

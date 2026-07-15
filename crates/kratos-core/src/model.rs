@@ -1,9 +1,11 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use crate::fingerprint::CONTENT_FINGERPRINT_ALGORITHM;
 use crate::suppressions::SuppressionRule;
 
 pub const REPORT_V2: u32 = 2;
+pub const REPORT_CURRENT: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectConfig {
@@ -202,6 +204,7 @@ pub struct ReportV2 {
     pub config_path: Option<PathBuf>,
     pub summary: SummaryCounts,
     pub findings: FindingSet,
+    pub clean_safety: CleanSafetyManifest,
     pub modules: Vec<ModuleRecord>,
 }
 
@@ -217,15 +220,39 @@ impl ReportV2 {
 impl Default for ReportV2 {
     fn default() -> Self {
         Self {
-            version: REPORT_V2,
+            version: REPORT_CURRENT,
             generated_at: None,
             root: PathBuf::new(),
             config_path: None,
             summary: SummaryCounts::default(),
             findings: FindingSet::default(),
+            clean_safety: CleanSafetyManifest::default(),
             modules: Vec::new(),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanSafetyManifest {
+    pub fingerprint_algorithm: String,
+    pub candidates: Vec<CleanCandidateFingerprint>,
+}
+
+impl Default for CleanSafetyManifest {
+    fn default() -> Self {
+        Self {
+            fingerprint_algorithm: CONTENT_FINGERPRINT_ALGORITHM.to_string(),
+            candidates: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanCandidateFingerprint {
+    pub file: PathBuf,
+    pub fingerprint: Option<String>,
+    pub identity: Option<String>,
+    pub parent_identity: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

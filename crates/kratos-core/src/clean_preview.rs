@@ -2,7 +2,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
 
-use crate::clean::{is_safe_clean_candidate, plan_clean_candidates};
+use crate::clean::{
+    clean_candidate_safety_status, is_safe_clean_candidate, plan_clean_candidates,
+    CleanSafetyStatus,
+};
 use crate::model::{DeletionCandidateFinding, ReportV2};
 use crate::KratosResult;
 
@@ -18,6 +21,7 @@ pub struct CleanPreviewItem {
     pub relative_path: String,
     pub reason: String,
     pub confidence: f32,
+    pub safety_status: CleanSafetyStatus,
     pub exists: bool,
     pub preview_excerpt: String,
 }
@@ -44,7 +48,7 @@ pub fn build_clean_preview(
             continue;
         }
 
-        items.push(build_preview_item(candidate, &report.root));
+        items.push(build_preview_item(candidate, report));
     }
 
     items.sort_by(|left, right| {
@@ -55,24 +59,26 @@ pub fn build_clean_preview(
     });
 
     Ok(CleanPreviewPlan {
-        deletion_target_paths: items.iter().map(|item| item.file.clone()).collect(),
+        deletion_target_paths: items
+            .iter()
+            .filter(|item| item.safety_status == CleanSafetyStatus::Ready)
+            .map(|item| item.file.clone())
+            .collect(),
         items,
         threshold_skipped_targets: threshold_plan.threshold_skipped_targets,
         unavailable_targets,
     })
 }
 
-fn build_preview_item(
-    candidate: &DeletionCandidateFinding,
-    report_root: &Path,
-) -> CleanPreviewItem {
+fn build_preview_item(candidate: &DeletionCandidateFinding, report: &ReportV2) -> CleanPreviewItem {
     let (exists, preview_excerpt) = read_preview_excerpt(&candidate.file);
 
     CleanPreviewItem {
         file: candidate.file.clone(),
-        relative_path: to_project_relative_path(&candidate.file, report_root),
+        relative_path: to_project_relative_path(&candidate.file, &report.root),
         reason: candidate.reason.clone(),
         confidence: candidate.confidence,
+        safety_status: clean_candidate_safety_status(report, candidate),
         exists,
         preview_excerpt,
     }
