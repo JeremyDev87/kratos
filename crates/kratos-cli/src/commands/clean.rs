@@ -15,7 +15,7 @@ use super::{parse_cli_options, resolve_report_input, write_output, CommandSpec, 
 pub const NAME: &str = "clean";
 pub const SPEC: CommandSpec = CommandSpec {
     name: NAME,
-    summary: "삭제 후보를 표시하거나 --apply로 삭제합니다.",
+    summary: "삭제 후보를 표시하거나 --apply로 보존 격리합니다.",
     usage: &["kratos clean [report-path-or-root] [--apply] [--min-confidence value]"],
 };
 
@@ -52,7 +52,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     let outcome = clean_from_report_with_min_confidence(&report, min_confidence)?;
     let mut output = format!(
         "Kratos clean: 파일 {}개를 코드 경로에서 격리했습니다.\n보존된 격리 파일: {}\n건너뛴 파일: {}\n실패한 파일: {}",
-        outcome.quarantined_files.len(),
+        outcome.deleted_files,
         outcome.quarantined_files.len(),
         outcome.skipped_files,
         outcome.failed_files.len()
