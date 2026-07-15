@@ -8,7 +8,7 @@ Kratos는 현재 Rust core/CLI와 npm launcher 기반으로 동작한다. 공개
 
 - `scan`, `report`, `diff`, `clean`
 - report `summary|json|md`
-- report schema `schemaVersion: 2`
+- report schema `schemaVersion: 3` (`cleanSafety` 포함; v2/legacy read compatibility 유지)
 - `React.lazy` / `next/dynamic` 기반 dynamic usage 인식
 - `kratos.config.json` 및 `.kratos/suppressions.json` suppression
 - `thresholds.cleanMinConfidence` 및 `clean --min-confidence`
@@ -33,7 +33,7 @@ Kratos는 현재 Rust core/CLI와 npm launcher 기반으로 동작한다. 공개
 - 기존 `scan`, `report`, `diff`, `clean` 입력 의미와 기본 동작은 유지한다.
 - 새 공개 명령은 `sweep`, `watch`만 남은 범위로 본다.
 - `report`는 기존 `summary|json|md`를 유지하면서 `html`을 추가한다.
-- report JSON의 `schemaVersion`은 계속 `2`를 유지한다.
+- report JSON의 current `schemaVersion`은 `3`이며, v2/legacy report는 읽되 safety evidence가 없어 destructive apply에서 fail-closed한다.
 - human-authored config는 계속 `kratos.config.json`을 사용한다.
 - machine-authored suppression은 `.kratos/suppressions.json`에 저장한다. `sweep`는 이 파일만 자동으로 쓴다.
 - `watch`는 OS 전용 file watcher dependency 대신 polling loop로 구현한다.

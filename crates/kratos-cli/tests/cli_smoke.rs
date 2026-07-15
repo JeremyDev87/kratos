@@ -588,15 +588,24 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
     let report_path = project_root.join("report-v3-clean.json");
     let dead_file = project_root.join("dead.txt");
     std::fs::write(&dead_file, "dead\n").expect("dead file should write");
+    let identity = current_file_identity(&dead_file);
+    let parent_identity = current_parent_identity(&dead_file);
+    let safe = identity.is_some() && parent_identity.is_some();
+    let identity_json = identity
+        .as_deref()
+        .map(|value| format!("\"{value}\""))
+        .unwrap_or_else(|| "null".to_string());
+    let parent_identity_json = parent_identity
+        .as_deref()
+        .map(|value| format!("\"{value}\""))
+        .unwrap_or_else(|| "null".to_string());
     std::fs::write(
         &report_path,
         format!(
-            "{{\"schemaVersion\":4,\"generatedAt\":\"2026-04-21T00:00:00Z\",\"project\":{{\"root\":\"{}\",\"configPath\":null}},\"summary\":{{\"filesScanned\":1,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":1}},\"findings\":{{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[{{\"file\":\"{}\",\"reason\":\"test\",\"confidence\":1.0,\"safe\":true}}]}},\"cleanSafety\":{{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[{{\"file\":\"{}\",\"fingerprint\":\"9edc05076fb5a5921c7e8ffe2cc79cc5d711d9612e138d09572f76df4530d870\",\"identity\":\"{}\",\"parentIdentity\":\"{}\"}}]}},\"graph\":{{\"modules\":[]}}}}\n",
+            "{{\"schemaVersion\":4,\"generatedAt\":\"2026-04-21T00:00:00Z\",\"project\":{{\"root\":\"{}\",\"configPath\":null}},\"summary\":{{\"filesScanned\":1,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":1}},\"findings\":{{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[{{\"file\":\"{}\",\"reason\":\"test\",\"confidence\":1.0,\"safe\":{safe}}}]}},\"cleanSafety\":{{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[{{\"file\":\"{}\",\"fingerprint\":\"9edc05076fb5a5921c7e8ffe2cc79cc5d711d9612e138d09572f76df4530d870\",\"identity\":{identity_json},\"parentIdentity\":{parent_identity_json}}}]}},\"graph\":{{\"modules\":[]}}}}\n",
             project_root.display(),
             dead_file.display(),
             dead_file.display(),
-            current_file_identity(&dead_file).expect("dead file should have stable identity"),
-            current_parent_identity(&dead_file).expect("dead parent should have stable identity"),
         ),
     )
     .expect("report should write");
@@ -620,10 +629,19 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
         ],
     );
     assert!(apply.status.success());
-    assert!(
-        String::from_utf8_lossy(&apply.stdout).contains("Kratos clean: 파일 1개를 삭제했습니다.")
-    );
-    assert!(!dead_file.exists());
+    #[cfg(unix)]
+    {
+        assert!(String::from_utf8_lossy(&apply.stdout)
+            .contains("Kratos clean: 파일 1개를 삭제했습니다."));
+        assert!(!dead_file.exists());
+    }
+    #[cfg(not(unix))]
+    {
+        let apply_stdout = String::from_utf8_lossy(&apply.stdout);
+        assert!(apply_stdout.contains("Kratos clean: 파일 0개를 삭제했습니다."));
+        assert!(apply_stdout.contains("건너뛴 파일: 1"));
+        assert!(dead_file.exists());
+    }
 }
 
 #[test]
