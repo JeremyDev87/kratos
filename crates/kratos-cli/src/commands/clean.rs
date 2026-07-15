@@ -206,7 +206,7 @@ fn format_clean_preview_plan(plan: &CleanPreviewPlan, report_root: &Path) -> Str
     }
 
     lines.push(String::new());
-    lines.push("삭제하려면 --apply로 다시 실행하세요.".to_string());
+    lines.push("원래 코드 경로에서 보존 격리하려면 --apply로 다시 실행하세요.".to_string());
     lines.join("\n")
 }
 
