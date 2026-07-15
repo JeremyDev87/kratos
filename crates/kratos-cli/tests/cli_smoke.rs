@@ -130,6 +130,30 @@ fn scan_report_and_clean_work_for_demo_fixture() {
     assert!(clean_stdout.contains("미리보기:"));
     assert!(clean_stdout.contains("export function DeadWidget()"));
     assert!(clean_stdout.contains("삭제하려면 --apply로 다시 실행하세요."));
+
+    let diff = run_cli(&[
+        "diff",
+        report_path.to_str().expect("path should be utf8"),
+        report_path.to_str().expect("path should be utf8"),
+        "--format",
+        "summary",
+    ]);
+    assert!(diff.status.success());
+    let diff_stdout = String::from_utf8_lossy(&diff.stdout);
+    assert!(diff_stdout.contains("Kratos diff 완료."));
+    assert!(diff_stdout.contains("합계: 새로 발생 0, 해결됨 0, 유지됨 9"));
+
+    let diff_json = run_cli(&[
+        "diff",
+        report_path.to_str().expect("path should be utf8"),
+        report_path.to_str().expect("path should be utf8"),
+        "--format",
+        "json",
+    ]);
+    assert!(diff_json.status.success());
+    let diff_json_value: serde_json::Value =
+        serde_json::from_slice(&diff_json.stdout).expect("diff json should parse");
+    assert_eq!(diff_json_value["summary"]["totals"]["persisted"], 9);
 }
 
 #[test]
