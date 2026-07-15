@@ -418,7 +418,6 @@ where
         &quarantine.directory,
         quarantine_candidate_name(),
     ) {
-        quarantine.remove_empty();
         return if error.kind() == ErrorKind::NotFound {
             QuarantineOutcome::Skipped(None)
         } else {
@@ -500,11 +499,9 @@ where
 
 #[cfg(unix)]
 struct QuarantineDirectory {
-    root_directory: File,
     directory: File,
     root_path: PathBuf,
     path: PathBuf,
-    name: CString,
 }
 
 #[cfg(unix)]
@@ -551,17 +548,12 @@ impl QuarantineDirectory {
                 Ok(directory) => {
                     let path = root_path.join(std::ffi::OsStr::from_bytes(name.to_bytes()));
                     return Ok(Self {
-                        root_directory,
                         directory,
                         root_path,
                         path,
-                        name,
                     });
                 }
-                Err(error) => {
-                    let _ = unlink_at(&root_directory, &name, libc::AT_REMOVEDIR);
-                    return Err(error);
-                }
+                Err(error) => return Err(error),
             }
         }
 
@@ -587,10 +579,6 @@ impl QuarantineDirectory {
                 .as_deref()
                 .and_then(Path::parent)
                 .is_some_and(|parent| parent == self.root_path)
-    }
-
-    fn remove_empty(&self) {
-        let _ = unlink_at(&self.root_directory, &self.name, libc::AT_REMOVEDIR);
     }
 }
 
@@ -774,12 +762,6 @@ fn link_at(
             0,
         )
     };
-    zero_or_last_error(result)
-}
-
-#[cfg(unix)]
-fn unlink_at(parent: &File, name: &CStr, flags: libc::c_int) -> std::io::Result<()> {
-    let result = unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), flags) };
     zero_or_last_error(result)
 }
 
