@@ -1,6 +1,6 @@
 # Kratos v1 CLI/report contract evidence
 
-Issue: [#91](https://github.com/JeremyDev87/kratos/issues/91)
+Issues: [#91](https://github.com/JeremyDev87/kratos/issues/91) contract baseline; [#92](https://github.com/JeremyDev87/kratos/issues/92) clean-safety migration
 
 This note freezes the consumer-visible v1 CLI/report contract before any version bump. It is intentionally limited to command/report semantics and does not bump versions, create tags, publish packages, or dispatch release workflows.
 
@@ -17,11 +17,11 @@ This note freezes the consumer-visible v1 CLI/report contract before any version
 - Unknown commands and invalid explicit format, boolean, threshold, or incompatible option values return exit code `1` with `Kratos 실행 실패: ...` or the Korean command-help error path.
 - Compatibility exceptions retained from the JavaScript baseline return `0` when the underlying command succeeds: `scan`/`clean` ignore unknown flags, `report` ignores surplus positionals, and bare or empty `report --format` falls back to `summary`.
 - `clean` without `--apply` is a preview/dry-run and returns `0` when the report is valid.
-- `clean --apply` returns `0` after completing its delete/skip plan, including a successful no-op, and returns `1` for invalid input or an unhandled filesystem error.
+- `clean --apply` returns `0` after completing a delete/skip plan, including a successful no-op. It returns `1` for invalid input or any per-file filesystem failure after reporting deleted/skipped/failed counts and the failed path.
 
 ## Report JSON contract
 
-The v1 writer emits schema version `2`. Stable writer key names are centralized in the private `report_contract` module and used by the serializer; independent literal expectations in the contract test freeze the emitted shape.
+The frozen v1 baseline emitted schema version `2`. Issue #92 advances the current writer to schema version `3` because apply-time deletion safety now requires persisted content fingerprints. Stable writer key names remain centralized in the private `report_contract` module and independent literal expectations freeze each emitted shape.
 
 Required top-level keys:
 
@@ -30,6 +30,7 @@ Required top-level keys:
 - `project`
 - `summary`
 - `findings`
+- `cleanSafety`
 - `graph`
 
 Required nested keys:
@@ -50,6 +51,13 @@ Finding item shapes:
 - `routeEntrypoints[]`: `file`, `kind`
 - `deletionCandidates[]`: `file`, `reason`, `confidence`, `safe`
 
+Schema-v3 clean-safety shape:
+
+- `cleanSafety`: `fingerprintAlgorithm`, `candidates`
+- `cleanSafety.candidates[]`: `file`, `fingerprint`, `identity`, `parentIdentity`
+- `fingerprintAlgorithm` is currently `sha256`; `fingerprint` is a lowercase 64-character digest of the same bytes used by analysis, `identity` is the platform stable-file identity captured from that opened regular file, and `parentIdentity` is the stable identity of the candidate's parent directory captured alongside it. Any evidence field is `null` when it cannot be collected, making the candidate non-deletable.
+- Schema-v2 and legacy reports remain readable for summary/Markdown/diff compatibility, but their deletion candidates do not have fingerprint evidence and therefore fail closed during `clean`.
+
 The writer-key contract test uses independent literal expectations for every container, finding item, and graph module key above. It also fixes representative item values/types; existing parity and round-trip tests cover broader serialized values and reader compatibility.
 
 ## Format contract
@@ -68,11 +76,14 @@ The writer-key contract test uses independent literal expectations for every con
 
 - A report with no deletion candidates is a successful no-op (`0`) before threshold configuration is loaded.
 - `--min-confidence` overrides `thresholds.cleanMinConfidence`; when neither is provided, the threshold is `0.0`. Candidates below the effective threshold are skipped.
-- Preview excludes candidates whose normalized path or real parent escapes the report root. Root-contained missing or unreadable candidates remain visible with status/marker evidence instead of being silently omitted.
-- Apply skips root-escaping, missing, and below-threshold candidates. `clean --apply` reports deleted and skipped counts; non-`NotFound` deletion errors return `1`, and cleanup of now-empty parent directories is best-effort within the report root.
-- The required `safe` field is descriptive metadata in the current v1 implementation; apply is gated by deletion-candidate membership, confidence, filesystem existence, and root containment. Consumers must not treat `safe` alone as deletion authorization. Fail-closed hardening remains follow-up work for issue #92.
+- Preview excludes candidates whose normalized path or real parent escapes the report root. Root-contained candidates that fail safety validation remain visible in a separate safety-skipped section with status/marker evidence instead of being silently omitted.
+- Apply requires exactly one normalized deletion candidate and one matching manifest entry, `safe: true`, the confidence threshold, root/real-parent containment, `sha256`, stable file and parent-directory identity, and content equality.
+- After precheck, apply atomically moves the pathname into a unique private quarantine directly under the report root, then rechecks the original candidate parent's identity plus quarantine root containment, file identity, and content. This detects a candidate-parent relocation even when the redirected pathname is a matching hard link to the analyzed inode. The moved link is restored without clobbering an independently created pathname; only an object that passes every post-move check is deleted. Candidates on a filesystem that cannot be renamed into the report-root quarantine fail closed. A process crash or power loss during the short quarantine window can leave verified contents preserved under the report root as `.kratos-clean-quarantine-*`; this path is intentionally not auto-deleted and must be restored manually. The report root itself must remain stable for the duration of apply; concurrent relocation/replacement of the entire project root is outside the supported threat model.
+- Apply skips schema-v2/legacy candidates without evidence, duplicate/aliased candidate paths, `safe: false`, missing/unreadable/non-regular files, direct symlinks, duplicate/missing manifest evidence, unsupported algorithms or platforms without stable identity evidence, identity/content mismatches, root escapes, and below-threshold candidates.
+- `clean --apply` reports deleted, skipped, and failed counts. Per-file failures do not discard prior successful-delete accounting. Parent directories are intentionally left in place so a mutable-parent race cannot turn convenience cleanup into an out-of-root directory removal.
+- Fingerprint, file identity, and `safe` are execution-safety metadata only. They are excluded from finding identity, so the v2→v3 migration and content changes do not create diff churn.
 
 ## Evidence added in this PR
 
-- `crates/kratos-core/tests/report_v2.rs::report_v2_writer_keys_match_the_frozen_v1_contract` verifies emitted writer keys against independent literal key lists and representative value/type assertions.
+- `crates/kratos-core/tests/report_v2.rs::current_writer_keys_match_the_schema_v3_clean_safety_contract` verifies emitted writer keys against independent literal key lists and representative value/type assertions while retaining schema-v2 reader tests.
 - `crates/kratos-cli/tests/cli_smoke.rs::scan_report_and_clean_work_for_demo_fixture` now includes diff summary/json smoke evidence alongside scan/report/clean evidence.

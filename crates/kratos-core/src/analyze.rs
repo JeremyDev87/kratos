@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,12 +7,14 @@ use crate::config::load_project_config;
 use crate::discover::collect_source_files;
 use crate::entrypoints::detect_entrypoint_kind;
 use crate::error::KratosResult;
+use crate::fingerprint::{read_source_and_snapshot, FileSnapshot, CONTENT_FINGERPRINT_ALGORITHM};
 use crate::ignore::IgnoreMatcher;
 use crate::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportRecord,
-    FindingSet, ImportKind, ImportSpecifierKind, ImportUsageRecord, ModuleRecord,
-    OrphanFileFinding, OrphanKind, ProjectConfig, ReportV2, ResolvedImportRecord,
-    RouteEntrypointFinding, SummaryCounts, UnusedImportFinding,
+    BrokenImportFinding, CleanCandidateFingerprint, CleanSafetyManifest, DeadExportFinding,
+    DeletionCandidateFinding, EntrypointKind, ExportRecord, FindingSet, ImportKind,
+    ImportSpecifierKind, ImportUsageRecord, ModuleRecord, OrphanFileFinding, OrphanKind,
+    ProjectConfig, ReportV2, ResolvedImportRecord, RouteEntrypointFinding, SummaryCounts,
+    UnusedImportFinding,
 };
 use crate::parser::parse_module_source;
 use crate::resolve::{resolve_import_target, unresolved_import};
@@ -70,9 +72,10 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
     let keep_matcher = IgnoreMatcher::new(&[], &config.keep_patterns);
     let mut modules = BTreeMap::new();
     let mut pure_barrel_files = BTreeSet::new();
+    let mut source_snapshots = BTreeMap::new();
 
     for file_path in files {
-        let source = std::fs::read_to_string(&file_path)?;
+        let (source, snapshot) = read_source_and_snapshot(&file_path)?;
         let parsed = parse_module_source(&file_path, &source)?;
         let entrypoint_kind = detect_entrypoint_kind(&file_path, config)?;
         let is_pure_barrel = parsed.is_pure_reexport_barrel;
@@ -96,7 +99,10 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         );
 
         if is_pure_barrel {
-            pure_barrel_files.insert(file_path);
+            pure_barrel_files.insert(file_path.clone());
+        }
+        if let Some(snapshot) = snapshot {
+            source_snapshots.insert(file_path, snapshot);
         }
     }
 
@@ -216,7 +222,7 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
                 file: module.file_path.clone(),
                 reason: classification.reason,
                 confidence: classification.confidence,
-                safe: true,
+                safe: false,
             });
         }
 
@@ -255,7 +261,7 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
     }
 
     let mut findings = FindingSet {
-        broken_imports: broken_imports,
+        broken_imports,
         orphan_files,
         dead_exports,
         unused_imports,
@@ -264,6 +270,7 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
     };
     let suppressions = load_project_suppressions(config);
     let suppressed_findings = apply_suppressions(&mut findings, &suppressions);
+    let clean_safety_candidates = attach_clean_safety_evidence(&mut findings, &source_snapshots);
 
     let mut report = ReportV2::new(config.root.clone());
     report.generated_at = Some(current_timestamp());
@@ -285,6 +292,10 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         deletion_candidates: findings.deletion_candidates.len(),
         suppressed_findings,
     };
+    report.clean_safety = CleanSafetyManifest {
+        fingerprint_algorithm: CONTENT_FINGERPRINT_ALGORITHM.to_string(),
+        candidates: clean_safety_candidates,
+    };
     report.findings = findings;
     report.modules = modules
         .into_values()
@@ -296,6 +307,26 @@ pub fn analyze_with_config(config: &ProjectConfig) -> KratosResult<ReportV2> {
         })
         .collect();
     Ok(report)
+}
+
+fn attach_clean_safety_evidence(
+    findings: &mut FindingSet,
+    source_snapshots: &BTreeMap<PathBuf, FileSnapshot>,
+) -> Vec<CleanCandidateFingerprint> {
+    findings
+        .deletion_candidates
+        .iter_mut()
+        .map(|candidate| {
+            let snapshot = source_snapshots.get(&candidate.file);
+            candidate.safe = snapshot.is_some();
+            CleanCandidateFingerprint {
+                file: candidate.file.clone(),
+                fingerprint: snapshot.map(|value| value.fingerprint.clone()),
+                identity: snapshot.map(|value| value.identity.clone()),
+                parent_identity: snapshot.map(|value| value.parent_identity.clone()),
+            }
+        })
+        .collect()
 }
 
 fn is_kept_by_pattern(keep_matcher: &IgnoreMatcher, relative_path: &str) -> bool {
@@ -473,7 +504,7 @@ fn route_file_stem(relative_path: &str) -> Option<&str> {
 }
 
 fn matches_stem(stem: &str, candidates: &[&str]) -> bool {
-    candidates.iter().any(|candidate| *candidate == stem)
+    candidates.contains(&stem)
 }
 
 fn is_route_like_file_name(file_name: &str) -> bool {
@@ -552,8 +583,41 @@ struct OrphanClassification {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_orphan, is_framework_consumed_export, should_skip_dead_exports};
-    use crate::model::{EntrypointKind, OrphanKind};
+    use std::collections::BTreeMap;
+
+    use super::{
+        attach_clean_safety_evidence, classify_orphan, is_framework_consumed_export,
+        should_skip_dead_exports,
+    };
+    use crate::fingerprint::FileSnapshot;
+    use crate::model::{DeletionCandidateFinding, EntrypointKind, FindingSet, OrphanKind};
+
+    #[test]
+    fn clean_safety_uses_the_snapshot_captured_with_the_analyzed_source() {
+        let file = std::path::PathBuf::from("/repo/src/dead.ts");
+        let mut findings = FindingSet::default();
+        findings.deletion_candidates.push(DeletionCandidateFinding {
+            file: file.clone(),
+            reason: "test".to_string(),
+            confidence: 1.0,
+            safe: false,
+        });
+        let snapshots = BTreeMap::from([(
+            file.clone(),
+            FileSnapshot {
+                fingerprint: "analyzed-bytes".to_string(),
+                identity: "analyzed-file".to_string(),
+                parent_identity: "analyzed-parent".to_string(),
+            },
+        )]);
+
+        let manifest = attach_clean_safety_evidence(&mut findings, &snapshots);
+
+        assert!(findings.deletion_candidates[0].safe);
+        assert_eq!(manifest[0].file, file);
+        assert_eq!(manifest[0].fingerprint.as_deref(), Some("analyzed-bytes"));
+        assert_eq!(manifest[0].identity.as_deref(), Some("analyzed-file"));
+    }
 
     #[test]
     fn classify_orphan_avoids_route_false_positives_from_substrings() {

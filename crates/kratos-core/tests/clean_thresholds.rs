@@ -1,8 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use kratos_core::clean::{clean_from_report_with_min_confidence, plan_clean_candidates};
-use kratos_core::model::{DeletionCandidateFinding, ReportV2};
+use kratos_core::clean::{
+    clean_from_report_with_min_confidence, current_file_identity, current_parent_identity,
+    plan_clean_candidates,
+};
+use kratos_core::model::{CleanCandidateFingerprint, DeletionCandidateFinding, ReportV2};
+use sha2::{Digest, Sha256};
 
 #[test]
 fn plan_clean_candidates_splits_deletion_targets_and_threshold_skips() {
@@ -81,8 +85,24 @@ fn report_with_candidates(root: &Path, candidates: &[(&str, f32)]) -> ReportV2 {
             safe: true,
         })
         .collect();
+    report.clean_safety.candidates = report
+        .findings
+        .deletion_candidates
+        .iter()
+        .map(|candidate| CleanCandidateFingerprint {
+            file: candidate.file.clone(),
+            fingerprint: Some(content_fingerprint(&candidate.file)),
+            identity: current_file_identity(&candidate.file),
+            parent_identity: current_parent_identity(&candidate.file),
+        })
+        .collect();
 
     report
+}
+
+fn content_fingerprint(path: &Path) -> String {
+    let bytes = std::fs::read(path).expect("candidate file should read");
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn temp_dir(label: &str) -> PathBuf {

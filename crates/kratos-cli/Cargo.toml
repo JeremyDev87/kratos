@@ -12,3 +12,6 @@ description = "Rust CLI surface for Kratos."
 clap = { version = "4.5.41", features = ["derive"] }
 kratos-core = { path = "../kratos-core" }
 serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+sha2 = "0.10"

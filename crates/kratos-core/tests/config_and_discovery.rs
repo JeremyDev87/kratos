@@ -1078,7 +1078,8 @@ runs:
 }
 
 #[test]
-fn analyze_project_excludes_script_workflow_and_tooling_entries_from_deletion_candidates() {
+fn analyze_project_excludes_framework_script_workflow_and_tooling_entries_from_deletion_candidates()
+{
     let project = TestProject::new("script-workflow-analysis");
     project.write(
         "package.json",
@@ -1105,6 +1106,14 @@ jobs:
         "export const fromWorkflow = true;\n",
     );
     project.write("eslint.config.mjs", "export default [];\n");
+    project.write(
+        "app/dashboard/page.tsx",
+        "export default function Dashboard() { return null; }\n",
+    );
+    project.write(
+        "app/api/health/route.ts",
+        "export function GET() { return new Response('ok'); }\n",
+    );
     project.write("src/unused.ts", "export const unused = true;\n");
 
     let report = analyze_project(project.root()).expect("project should analyze");
@@ -1118,7 +1127,25 @@ jobs:
     assert!(!deletion_candidates.contains(&project.root().join("scripts/generate.mjs")));
     assert!(!deletion_candidates.contains(&project.root().join("scripts/from-workflow.mjs")));
     assert!(!deletion_candidates.contains(&project.root().join("eslint.config.mjs")));
+    assert!(!deletion_candidates.contains(&project.root().join("app/dashboard/page.tsx")));
+    assert!(!deletion_candidates.contains(&project.root().join("app/api/health/route.ts")));
     assert!(deletion_candidates.contains(&project.root().join("src/unused.ts")));
+    let unused_candidate = report
+        .findings
+        .deletion_candidates
+        .iter()
+        .find(|candidate| candidate.file == project.root().join("src/unused.ts"))
+        .expect("unused source should be a deletion candidate");
+    assert!(unused_candidate.safe);
+    let fingerprint = report
+        .clean_safety
+        .candidates
+        .iter()
+        .find(|entry| entry.file == unused_candidate.file)
+        .and_then(|entry| entry.fingerprint.as_deref())
+        .expect("safe candidate should have fingerprint evidence");
+    assert_eq!(report.clean_safety.fingerprint_algorithm, "sha256");
+    assert_eq!(fingerprint.len(), 64);
 }
 
 #[test]

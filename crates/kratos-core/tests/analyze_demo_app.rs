@@ -9,7 +9,7 @@ fn analyze_demo_app_matches_expected_graph_and_findings() {
     let demo_root = repo_root().join("fixtures/demo-app");
     let report = analyze_project(&demo_root).expect("demo app should analyze");
 
-    assert_eq!(report.version, 2);
+    assert_eq!(report.version, 3);
     assert!(report.generated_at.is_some());
     assert_eq!(report.root, demo_root);
     assert_eq!(report.summary.files_scanned, 5);

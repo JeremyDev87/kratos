@@ -1,6 +1,8 @@
 mod support;
 
+use kratos_core::clean::{current_file_identity, current_parent_identity};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use support::cli::run_cli_in_dir;
 use support::fs::temp_dir;
@@ -45,6 +47,32 @@ fn clean_uses_config_threshold_and_flag_override() {
 }
 
 #[test]
+fn clean_reports_and_skips_stale_fingerprint_candidates() {
+    let project_root = temp_dir("clean-stale-fingerprint-cli");
+    write_clean_threshold_fixture(&project_root, 0.98, 0.96, 0.75);
+    let high_file = project_root.join("high-confidence.ts");
+    std::fs::write(&high_file, "export const changed = true;\n")
+        .expect("candidate should change after report generation");
+
+    let dry_run = run_cli_in_dir(&project_root, &["clean", "--min-confidence", "0.9"]);
+    assert!(dry_run.status.success());
+    let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
+    assert!(dry_run_stdout.contains("삭제 대상: 0"));
+    assert!(dry_run_stdout.contains("안전 검증으로 건너뛴 대상: 1"));
+    assert!(dry_run_stdout.contains("안전 상태: 스캔 후 파일 변경됨"));
+
+    let apply = run_cli_in_dir(
+        &project_root,
+        &["clean", "--apply", "--min-confidence", "0.9"],
+    );
+    assert!(apply.status.success());
+    let apply_stdout = String::from_utf8_lossy(&apply.stdout);
+    assert!(apply_stdout.contains("Kratos clean: 파일 0개를 삭제했습니다."));
+    assert!(apply_stdout.contains("건너뛴 파일: 2"));
+    assert!(high_file.exists());
+}
+
+#[test]
 fn clean_dry_run_renders_excerpts_markers_and_separate_skipped_sections() {
     let project_root = temp_dir("clean-threshold-cli-preview");
     write_clean_preview_fixture(&project_root);
@@ -53,13 +81,15 @@ fn clean_dry_run_renders_excerpts_markers_and_separate_skipped_sections() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    assert!(stdout.contains("삭제 대상: 3"));
+    assert!(stdout.contains("삭제 대상: 2"));
     assert!(stdout.contains("- src/live.ts"));
     assert!(stdout.contains("신뢰도: 0.96"));
     assert!(stdout.contains("사유: live candidate"));
     assert!(stdout.contains("상태: 존재함"));
     assert!(stdout.contains("export const live = true;"));
     assert!(stdout.contains("- src/missing.ts"));
+    assert!(stdout.contains("안전 검증으로 건너뛴 대상: 1"));
+    assert!(stdout.contains("안전 상태: fingerprint 없음"));
     assert!(stdout.contains("상태: 없음"));
     assert!(stdout.contains("[missing file]"));
     assert!(stdout.contains("- src/binary.bin"));
@@ -226,19 +256,13 @@ fn write_clean_threshold_fixture(
     )
     .expect("config should write");
 
-    std::fs::write(
-        project_root.join("high-confidence.ts"),
-        "export const high = true;\n",
-    )
-    .expect("high file should write");
-    std::fs::write(
-        project_root.join("mid-confidence.ts"),
-        "export const mid = true;\n",
-    )
-    .expect("mid file should write");
+    let high_file = project_root.join("high-confidence.ts");
+    let mid_file = project_root.join("mid-confidence.ts");
+    std::fs::write(&high_file, "export const high = true;\n").expect("high file should write");
+    std::fs::write(&mid_file, "export const mid = true;\n").expect("mid file should write");
 
     let report = json!({
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "generatedAt": "2026-04-21T00:00:00Z",
         "project": {
             "root": project_root,
@@ -262,16 +286,33 @@ fn write_clean_threshold_fixture(
             "routeEntrypoints": [],
             "deletionCandidates": [
                 {
-                    "file": project_root.join("high-confidence.ts"),
+                    "file": high_file,
                     "reason": "high confidence candidate",
                     "confidence": high_confidence,
                     "safe": true,
                 },
                 {
-                    "file": project_root.join("mid-confidence.ts"),
+                    "file": mid_file,
                     "reason": "mid confidence candidate",
                     "confidence": mid_confidence,
                     "safe": true,
+                }
+            ],
+        },
+        "cleanSafety": {
+            "fingerprintAlgorithm": "sha256",
+            "candidates": [
+                {
+                    "file": high_file,
+                    "fingerprint": content_fingerprint(&high_file),
+                    "identity": current_file_identity(&high_file),
+                    "parentIdentity": current_parent_identity(&high_file),
+                },
+                {
+                    "file": mid_file,
+                    "fingerprint": content_fingerprint(&mid_file),
+                    "identity": current_file_identity(&mid_file),
+                    "parentIdentity": current_parent_identity(&mid_file),
                 }
             ],
         },
@@ -285,6 +326,11 @@ fn write_clean_threshold_fixture(
         serde_json::to_string_pretty(&report).expect("report should serialize"),
     )
     .expect("report should write");
+}
+
+fn content_fingerprint(path: &std::path::Path) -> String {
+    let bytes = std::fs::read(path).expect("fingerprinted file should read");
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn write_clean_preview_fixture(project_root: &std::path::Path) {
@@ -360,6 +406,41 @@ fn write_clean_preview_fixture(project_root: &std::path::Path) {
                     "reason": "outside candidate",
                     "confidence": 0.93,
                     "safe": true,
+                }
+            ],
+        },
+        "cleanSafety": {
+            "fingerprintAlgorithm": "sha256",
+            "candidates": [
+                {
+                    "file": project_root.join("src/live.ts"),
+                    "fingerprint": content_fingerprint(&project_root.join("src/live.ts")),
+                    "identity": current_file_identity(&project_root.join("src/live.ts")),
+                    "parentIdentity": current_parent_identity(&project_root.join("src/live.ts")),
+                },
+                {
+                    "file": project_root.join("src/missing.ts"),
+                    "fingerprint": null,
+                    "identity": null,
+                    "parentIdentity": null,
+                },
+                {
+                    "file": project_root.join("src/binary.bin"),
+                    "fingerprint": content_fingerprint(&project_root.join("src/binary.bin")),
+                    "identity": current_file_identity(&project_root.join("src/binary.bin")),
+                    "parentIdentity": current_parent_identity(&project_root.join("src/binary.bin")),
+                },
+                {
+                    "file": project_root.join("src/low-confidence.ts"),
+                    "fingerprint": null,
+                    "identity": null,
+                    "parentIdentity": null,
+                },
+                {
+                    "file": outside_candidate,
+                    "fingerprint": null,
+                    "identity": null,
+                    "parentIdentity": null,
                 }
             ],
         },

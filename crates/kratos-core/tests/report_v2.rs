@@ -7,7 +7,7 @@ use kratos_core::report::{
     format_markdown_report, format_summary_report, parse_report_json, serialize_report_pretty,
     validate_report_version,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[test]
 fn report_v2_matches_parity_fixture_outputs() {
@@ -41,15 +41,15 @@ fn report_v2_matches_parity_fixture_outputs() {
 }
 
 #[test]
-fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
+fn current_report_serializes_schema_version_3_and_roundtrips_core_fields() {
     let repo_root = repo_root();
     let demo_root = repo_root.join("fixtures/demo-app");
     let report = analyze_project(&demo_root).expect("demo app should analyze");
     let serialized = serialize_report_pretty(&report).expect("report should serialize");
     let parsed = parse_report_json(&serialized).expect("serialized report should parse");
-    validate_report_version(&parsed).expect("v2 report should validate");
+    validate_report_version(&parsed).expect("current report should validate");
 
-    assert_eq!(parsed.version, 2);
+    assert_eq!(parsed.version, 3);
     assert_eq!(parsed.root, demo_root);
     assert_eq!(parsed.config_path, report.config_path);
     assert_eq!(parsed.summary, report.summary);
@@ -71,6 +71,7 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
         parsed.findings.deletion_candidates,
         report.findings.deletion_candidates
     );
+    assert_eq!(parsed.clean_safety, report.clean_safety);
     assert_eq!(
         parsed
             .modules
@@ -118,7 +119,7 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
         .cloned()
         .unwrap_or_else(|| fixture_value["modules"].clone());
 
-    assert_eq!(normalized["schemaVersion"], Value::from(2));
+    assert_eq!(normalized["schemaVersion"], Value::from(3));
     assert_eq!(normalized["generatedAt"], Value::from("<GENERATED_AT>"));
     assert_eq!(normalized["project"]["root"], Value::from("<ROOT>"));
     assert_eq!(normalized["project"]["configPath"], Value::Null);
@@ -165,13 +166,82 @@ fn report_v2_serializes_schema_version_2_and_roundtrips_core_fields() {
 }
 
 #[test]
-fn report_v2_writer_keys_match_the_frozen_v1_contract() {
+fn schema_v3_reader_requires_well_typed_clean_safety_evidence() {
+    let demo_root = repo_root().join("fixtures/demo-app");
+    let report = analyze_project(&demo_root).expect("demo app should analyze");
+    let serialized = serialize_report_pretty(&report).expect("report should serialize");
+    let value: Value = serde_json::from_str(&serialized).expect("report JSON should parse");
+
+    let mut missing_manifest = value.clone();
+    missing_manifest
+        .as_object_mut()
+        .expect("report should be an object")
+        .remove("cleanSafety");
+    let error = parse_report_json(
+        &serde_json::to_string(&missing_manifest).expect("mutated report should serialize"),
+    )
+    .expect_err("schema v3 should require cleanSafety");
+    assert!(error.to_string().contains("cleanSafety"));
+
+    let mut invalid_algorithm = value.clone();
+    invalid_algorithm["cleanSafety"]["fingerprintAlgorithm"] = Value::from(7);
+    let error = parse_report_json(
+        &serde_json::to_string(&invalid_algorithm).expect("mutated report should serialize"),
+    )
+    .expect_err("fingerprintAlgorithm should require a string");
+    assert!(error
+        .to_string()
+        .contains("cleanSafety.fingerprintAlgorithm"));
+
+    let mut invalid_candidates = value.clone();
+    invalid_candidates["cleanSafety"]["candidates"] = json!({});
+    let error = parse_report_json(
+        &serde_json::to_string(&invalid_candidates).expect("mutated report should serialize"),
+    )
+    .expect_err("clean safety candidates should require an array");
+    assert!(error.to_string().contains("cleanSafety.candidates"));
+
+    let mut invalid_fingerprint = value.clone();
+    invalid_fingerprint["cleanSafety"]["candidates"][0]["fingerprint"] = Value::Bool(true);
+    let error = parse_report_json(
+        &serde_json::to_string(&invalid_fingerprint).expect("mutated report should serialize"),
+    )
+    .expect_err("fingerprint should require a string or null");
+    assert!(error
+        .to_string()
+        .contains("cleanSafety.candidates[0].fingerprint"));
+
+    let mut invalid_identity = value.clone();
+    invalid_identity["cleanSafety"]["candidates"][0]["identity"] = Value::Bool(true);
+    let error = parse_report_json(
+        &serde_json::to_string(&invalid_identity).expect("mutated report should serialize"),
+    )
+    .expect_err("identity should require a string or null");
+    assert!(error
+        .to_string()
+        .contains("cleanSafety.candidates[0].identity"));
+
+    let mut invalid_parent_identity = value;
+    invalid_parent_identity["cleanSafety"]["candidates"][0]["parentIdentity"] =
+        Value::Bool(true);
+    let error = parse_report_json(
+        &serde_json::to_string(&invalid_parent_identity).expect("mutated report should serialize"),
+    )
+    .expect_err("parentIdentity should require a string or null");
+    assert!(error
+        .to_string()
+        .contains("cleanSafety.candidates[0].parentIdentity"));
+}
+
+#[test]
+fn current_writer_keys_match_the_schema_v3_clean_safety_contract() {
     const TOP_LEVEL_KEYS: &[&str] = &[
         "schemaVersion",
         "generatedAt",
         "project",
         "summary",
         "findings",
+        "cleanSafety",
         "graph",
     ];
     const PROJECT_KEYS: &[&str] = &["root", "configPath"];
@@ -208,6 +278,9 @@ fn report_v2_writer_keys_match_the_frozen_v1_contract() {
     const UNUSED_IMPORT_KEYS: &[&str] = &["file", "source", "local", "imported"];
     const ROUTE_ENTRYPOINT_KEYS: &[&str] = &["file", "kind"];
     const DELETION_CANDIDATE_KEYS: &[&str] = &["file", "reason", "confidence", "safe"];
+    const CLEAN_SAFETY_KEYS: &[&str] = &["fingerprintAlgorithm", "candidates"];
+    const CLEAN_SAFETY_CANDIDATE_KEYS: &[&str] =
+        &["file", "fingerprint", "identity", "parentIdentity"];
     const GRAPH_KEYS: &[&str] = &["modules"];
     const MODULE_KEYS: &[&str] = &[
         "file",
@@ -232,7 +305,7 @@ fn report_v2_writer_keys_match_the_frozen_v1_contract() {
     let serialized = serialize_report_pretty(&report).expect("report should serialize");
     let value: Value = serde_json::from_str(&serialized).expect("serialized report should parse");
 
-    assert_eq!(value["schemaVersion"], Value::from(2));
+    assert_eq!(value["schemaVersion"], Value::from(3));
     assert_object_keys(&value, TOP_LEVEL_KEYS);
     assert_object_keys(&value["project"], PROJECT_KEYS);
     assert_object_keys(&value["summary"], SUMMARY_KEYS);
@@ -267,6 +340,30 @@ fn report_v2_writer_keys_match_the_frozen_v1_contract() {
         &finding_values["deletionCandidates"][0],
         DELETION_CANDIDATE_KEYS,
     );
+    assert_object_keys(&value["cleanSafety"], CLEAN_SAFETY_KEYS);
+    assert_eq!(value["cleanSafety"]["fingerprintAlgorithm"], "sha256");
+    let clean_candidates = value["cleanSafety"]["candidates"]
+        .as_array()
+        .expect("clean safety candidates should be an array");
+    assert_eq!(
+        clean_candidates.len(),
+        finding_values["deletionCandidates"]
+            .as_array()
+            .expect("deletion candidates should be an array")
+            .len()
+    );
+    for candidate in clean_candidates {
+        assert_object_keys(candidate, CLEAN_SAFETY_CANDIDATE_KEYS);
+        assert_eq!(
+            candidate["fingerprint"]
+                .as_str()
+                .expect("fingerprint should be a string")
+                .len(),
+            64
+        );
+        assert!(candidate["identity"].as_str().is_some());
+        assert!(candidate["parentIdentity"].as_str().is_some());
+    }
     assert_object_keys(&value["graph"], GRAPH_KEYS);
 
     let modules = value["graph"]["modules"]
@@ -598,8 +695,8 @@ fn legacy_report_parses_into_renderable_v2_report() {
     let report_path = Path::new("/tmp/kratos/.kratos/latest-report.json");
 
     assert_eq!(parsed.version, 2);
-    validate_report_version(&parsed).expect("legacy report should be canonicalized to v2");
-    serialize_report_pretty(&parsed).expect("legacy report should serialize");
+    assert_eq!(parsed.clean_safety.fingerprint_algorithm, "sha256");
+    assert!(parsed.clean_safety.candidates.is_empty());
     format_summary_report(&parsed, report_path).expect("legacy report should format as summary");
     format_markdown_report(&parsed, report_path).expect("legacy report should format as markdown");
 }
@@ -650,7 +747,7 @@ fn report_v2_dead_exports_include_evidence_and_legacy_shape_still_parses() {
       }
     }"#;
 
-    let parsed =
+    let mut parsed =
         parse_report_json(legacy_dead_export_report).expect("legacy dead export should parse");
     let finding = &parsed.findings.dead_exports[0];
 
@@ -663,7 +760,9 @@ fn report_v2_dead_exports_include_evidence_and_legacy_shape_still_parses() {
     assert!(finding.used_export_names.is_empty());
     assert!(!finding.has_namespace_or_unknown_usage);
 
-    let serialized = serialize_report_pretty(&parsed).expect("report should serialize");
+    parsed.version = 3;
+    parsed.clean_safety.fingerprint_algorithm = "sha256".to_string();
+    let serialized = serialize_report_pretty(&parsed).expect("current report should serialize");
     let serialized_value: Value =
         serde_json::from_str(&serialized).expect("serialized report should be valid JSON");
     let serialized_finding = &serialized_value["findings"]["deadExports"][0];

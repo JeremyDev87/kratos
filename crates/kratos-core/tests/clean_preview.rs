@@ -1,10 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use kratos_core::clean::{current_file_identity, current_parent_identity};
 use kratos_core::clean_preview::{
     build_clean_preview, BINARY_PREVIEW_MARKER, MISSING_PREVIEW_MARKER, UNREADABLE_PREVIEW_MARKER,
 };
-use kratos_core::model::{DeletionCandidateFinding, ReportV2};
+use kratos_core::model::{CleanCandidateFingerprint, DeletionCandidateFinding, ReportV2};
+use sha2::{Digest, Sha256};
 
 #[test]
 fn build_clean_preview_orders_items_by_confidence_then_relative_path() {
@@ -171,7 +173,10 @@ fn build_clean_preview_truncates_multibyte_text_without_marking_binary() {
     assert_ne!(preview.items[0].preview_excerpt, BINARY_PREVIEW_MARKER);
     assert!(preview.items[0].preview_excerpt.starts_with('가'));
     assert!(preview.items[0].preview_excerpt.len() < long_line.len());
-    assert!(preview.items[0].preview_excerpt.chars().all(|ch| ch == '가'));
+    assert!(preview.items[0]
+        .preview_excerpt
+        .chars()
+        .all(|ch| ch == '가'));
 }
 
 #[test]
@@ -260,7 +265,10 @@ fn build_clean_preview_skips_symlink_escaped_targets() {
     assert!(preview.items.is_empty());
     assert!(preview.deletion_target_paths.is_empty());
     assert_eq!(preview.unavailable_targets.len(), 1);
-    assert_eq!(preview.unavailable_targets[0].file, link_path.join("secret.ts"));
+    assert_eq!(
+        preview.unavailable_targets[0].file,
+        link_path.join("secret.ts")
+    );
 }
 
 #[test]
@@ -329,7 +337,7 @@ fn report_with_candidates(root: &Path, candidates: &[(&str, f32, Option<&[u8]>)]
     let mut report = ReportV2::new(root.to_path_buf());
     std::fs::create_dir_all(root).expect("report root should exist");
 
-    report.findings.deletion_candidates = candidates
+    let candidate_data = candidates
         .iter()
         .map(|(relative, confidence, bytes)| {
             let path = root.join(relative);
@@ -340,16 +348,37 @@ fn report_with_candidates(root: &Path, candidates: &[(&str, f32, Option<&[u8]>)]
                 std::fs::write(&path, bytes).expect("candidate file should write");
             }
 
-            DeletionCandidateFinding {
-                file: path,
-                reason: format!("{relative} candidate"),
-                confidence: *confidence,
-                safe: true,
-            }
+            let fingerprint = bytes.map(content_fingerprint);
+            (
+                DeletionCandidateFinding {
+                    file: path.clone(),
+                    reason: format!("{relative} candidate"),
+                    confidence: *confidence,
+                    safe: fingerprint.is_some(),
+                },
+                CleanCandidateFingerprint {
+                    identity: current_file_identity(&path),
+                    parent_identity: current_parent_identity(&path),
+                    file: path,
+                    fingerprint,
+                },
+            )
         })
+        .collect::<Vec<_>>();
+    report.findings.deletion_candidates = candidate_data
+        .iter()
+        .map(|(candidate, _)| candidate.clone())
+        .collect();
+    report.clean_safety.candidates = candidate_data
+        .into_iter()
+        .map(|(_, fingerprint)| fingerprint)
         .collect();
 
     report
+}
+
+fn content_fingerprint(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn temp_dir(label: &str) -> PathBuf {

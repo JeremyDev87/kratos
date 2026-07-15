@@ -4,12 +4,14 @@ use serde_json::{json, Value};
 
 use crate::error::{KratosError, KratosResult};
 use crate::model::{
-    BrokenImportFinding, DeadExportFinding, DeletionCandidateFinding, EntrypointKind, ExportKind,
-    ImportKind, ModuleRecord, OrphanFileFinding, OrphanKind, ReportV2, RouteEntrypointFinding,
-    SummaryCounts, UnusedImportFinding, REPORT_V2,
+    BrokenImportFinding, CleanCandidateFingerprint, CleanSafetyManifest, DeadExportFinding,
+    DeletionCandidateFinding, EntrypointKind, ExportKind, ImportKind, ModuleRecord,
+    OrphanFileFinding, OrphanKind, ReportV2, RouteEntrypointFinding, SummaryCounts,
+    UnusedImportFinding, REPORT_V2,
 };
 use crate::report_contract::{
-    finding_field, findings, graph, module, project, summary, top_level, REPORT_SCHEMA_VERSION,
+    clean_safety, finding_field, findings, graph, module, project, summary, top_level,
+    REPORT_SCHEMA_VERSION,
 };
 
 pub fn validate_report_version(report: &ReportV2) -> KratosResult<()> {
@@ -45,6 +47,7 @@ pub fn serialize_report_pretty(_report: &ReportV2) -> KratosResult<String> {
             findings::ROUTE_ENTRYPOINTS: _report.findings.route_entrypoints.iter().map(serialize_route_entrypoint).collect::<Vec<_>>(),
             findings::DELETION_CANDIDATES: _report.findings.deletion_candidates.iter().map(serialize_deletion_candidate).collect::<Vec<_>>(),
         },
+        top_level::CLEAN_SAFETY: serialize_clean_safety(&_report.clean_safety),
         top_level::GRAPH: {
             graph::MODULES: _report.modules.iter().map(serialize_module).collect::<Vec<_>>(),
         },
@@ -66,6 +69,11 @@ pub fn parse_report_json(raw: &str) -> KratosResult<ReportV2> {
 
     let generated_at =
         read_optional_string(Some(&value), "generatedAt", "generatedAt")?.map(str::to_string);
+    let clean_safety = if version >= REPORT_SCHEMA_VERSION {
+        parse_required_clean_safety(value.get("cleanSafety"))?
+    } else {
+        CleanSafetyManifest::default()
+    };
 
     let (root, config_path, summary, finding_set, modules) = if version >= REPORT_V2 {
         let project = read_required_object(value.get("project"), "project")?;
@@ -157,6 +165,7 @@ pub fn parse_report_json(raw: &str) -> KratosResult<ReportV2> {
         config_path,
         summary,
         findings: finding_set,
+        clean_safety,
         modules,
     })
 }
@@ -266,6 +275,24 @@ fn serialize_deletion_candidate(item: &DeletionCandidateFinding) -> Value {
         finding_field::REASON: item.reason,
         finding_field::CONFIDENCE: round_confidence(item.confidence),
         finding_field::SAFE: item.safe,
+    })
+}
+
+fn serialize_clean_safety(manifest: &CleanSafetyManifest) -> Value {
+    json!({
+        clean_safety::FINGERPRINT_ALGORITHM: manifest.fingerprint_algorithm,
+        clean_safety::CANDIDATES: manifest
+            .candidates
+            .iter()
+            .map(|candidate| {
+                json!({
+                    clean_safety::FILE: path_to_string(&candidate.file),
+                    clean_safety::FINGERPRINT: candidate.fingerprint,
+                    clean_safety::IDENTITY: candidate.identity,
+                    clean_safety::PARENT_IDENTITY: candidate.parent_identity,
+                })
+            })
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -687,6 +714,71 @@ fn parse_required_deletion_candidates(
             })
         })
         .collect()
+}
+
+fn parse_required_clean_safety(value: Option<&Value>) -> KratosResult<CleanSafetyManifest> {
+    let object = read_required_object(value, "cleanSafety")?;
+    let fingerprint_algorithm = read_required_string(
+        object,
+        "fingerprintAlgorithm",
+        "cleanSafety.fingerprintAlgorithm",
+    )?
+    .to_string();
+    let candidates = read_required_array(object.get("candidates"), "cleanSafety.candidates")?
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let path = format!("cleanSafety.candidates[{index}]");
+            let candidate = read_required_object(Some(item), &path)?;
+            let file = read_required_string(candidate, "file", &format!("{path}.file"))?.into();
+            let fingerprint = match candidate.get("fingerprint") {
+                Some(Value::Null) => None,
+                Some(Value::String(value)) => Some(value.clone()),
+                Some(_) => {
+                    return Err(KratosError::Json(format!(
+                        "{path}.fingerprint must be a string or null"
+                    )))
+                }
+                None => return Err(KratosError::Json(format!("{path}.fingerprint is required"))),
+            };
+            let identity = match candidate.get("identity") {
+                Some(Value::Null) => None,
+                Some(Value::String(value)) => Some(value.clone()),
+                Some(_) => {
+                    return Err(KratosError::Json(format!(
+                        "{path}.identity must be a string or null"
+                    )))
+                }
+                None => return Err(KratosError::Json(format!("{path}.identity is required"))),
+            };
+            let parent_identity = match candidate.get("parentIdentity") {
+                Some(Value::Null) => None,
+                Some(Value::String(value)) => Some(value.clone()),
+                Some(_) => {
+                    return Err(KratosError::Json(format!(
+                        "{path}.parentIdentity must be a string or null"
+                    )))
+                }
+                None => {
+                    return Err(KratosError::Json(format!(
+                        "{path}.parentIdentity is required"
+                    )))
+                }
+            };
+
+            Ok(CleanCandidateFingerprint {
+                file,
+                fingerprint,
+                identity,
+                parent_identity,
+            })
+        })
+        .collect::<KratosResult<Vec<_>>>()?;
+
+    Ok(CleanSafetyManifest {
+        fingerprint_algorithm,
+        candidates,
+    })
 }
 
 fn parse_modules(value: Option<&Value>) -> Vec<ModuleRecord> {

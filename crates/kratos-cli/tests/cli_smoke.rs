@@ -1,5 +1,6 @@
 mod support;
 
+use kratos_core::clean::{current_file_identity, current_parent_identity};
 use support::cli::{run_cli, run_cli_in_dir};
 use support::fs::{copy_demo_app, repo_root};
 
@@ -320,7 +321,10 @@ fn clean_accepts_legacy_v1_reports_through_cli() {
         &["clean", report_path.to_str().expect("path should be utf8")],
     );
     assert!(dry_run.status.success());
-    assert!(String::from_utf8_lossy(&dry_run.stdout).contains("Kratos clean 미리보기입니다."));
+    let dry_run_stdout = String::from_utf8_lossy(&dry_run.stdout);
+    assert!(dry_run_stdout.contains("Kratos clean 미리보기입니다."));
+    assert!(dry_run_stdout.contains("삭제 대상: 0"));
+    assert!(dry_run_stdout.contains("안전 검증으로 건너뛴 대상: 2"));
 
     let apply = run_cli_in_dir(
         &project_root,
@@ -332,10 +336,10 @@ fn clean_accepts_legacy_v1_reports_through_cli() {
     );
     assert!(apply.status.success());
     assert!(
-        String::from_utf8_lossy(&apply.stdout).contains("Kratos clean: 파일 2개를 삭제했습니다.")
+        String::from_utf8_lossy(&apply.stdout).contains("Kratos clean: 파일 0개를 삭제했습니다.")
     );
-    assert!(!project_root.join("src/components/DeadWidget.tsx").exists());
-    assert!(!project_root.join("src/lib/broken.ts").exists());
+    assert!(project_root.join("src/components/DeadWidget.tsx").exists());
+    assert!(project_root.join("src/lib/broken.ts").exists());
 }
 
 #[test]
@@ -514,7 +518,7 @@ fn report_summary_and_markdown_accept_future_schema_versions() {
     let report_path = project_root.join("report-v3.json");
     std::fs::write(
         &report_path,
-        "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"graph\":{\"modules\":[]}}\n",
+        "{\"schemaVersion\":4,\"project\":{\"root\":\"/tmp/demo\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"cleanSafety\":{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[]},\"graph\":{\"modules\":[]}}\n",
     )
     .expect("report should write");
 
@@ -549,7 +553,7 @@ fn report_incomplete_future_schema_fails_fast() {
     let report_path = project_root.join("report-v3-min.json");
     std::fs::write(
         &report_path,
-        "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\"}}\n",
+        "{\"schemaVersion\":4,\"project\":{\"root\":\"/tmp/demo\"},\"cleanSafety\":{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[]}}\n",
     )
     .expect("report should write");
 
@@ -587,9 +591,12 @@ fn clean_accepts_future_schema_reports_when_the_shape_is_compatible() {
     std::fs::write(
         &report_path,
         format!(
-            "{{\"schemaVersion\":3,\"generatedAt\":\"2026-04-21T00:00:00Z\",\"project\":{{\"root\":\"{}\",\"configPath\":null}},\"summary\":{{\"filesScanned\":1,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":1}},\"findings\":{{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[{{\"file\":\"{}\",\"reason\":\"test\",\"confidence\":1.0,\"safe\":true}}]}},\"graph\":{{\"modules\":[]}}}}\n",
+            "{{\"schemaVersion\":4,\"generatedAt\":\"2026-04-21T00:00:00Z\",\"project\":{{\"root\":\"{}\",\"configPath\":null}},\"summary\":{{\"filesScanned\":1,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":1}},\"findings\":{{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[{{\"file\":\"{}\",\"reason\":\"test\",\"confidence\":1.0,\"safe\":true}}]}},\"cleanSafety\":{{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[{{\"file\":\"{}\",\"fingerprint\":\"9edc05076fb5a5921c7e8ffe2cc79cc5d711d9612e138d09572f76df4530d870\",\"identity\":\"{}\",\"parentIdentity\":\"{}\"}}]}},\"graph\":{{\"modules\":[]}}}}\n",
             project_root.display(),
             dead_file.display(),
+            dead_file.display(),
+            current_file_identity(&dead_file).expect("dead file should have stable identity"),
+            current_parent_identity(&dead_file).expect("dead parent should have stable identity"),
         ),
     )
     .expect("report should write");

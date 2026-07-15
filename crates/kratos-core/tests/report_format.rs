@@ -239,7 +239,7 @@ fn summary_hides_route_entrypoint_details_but_markdown_keeps_them() {
 #[test]
 fn summary_and_markdown_formatters_accept_future_schema_versions() {
     let report = parse_report_json(
-        "{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"graph\":{\"modules\":[]}}",
+        "{\"schemaVersion\":4,\"project\":{\"root\":\"/tmp/demo\",\"configPath\":null},\"summary\":{\"filesScanned\":0,\"entrypoints\":0,\"brokenImports\":0,\"orphanFiles\":0,\"deadExports\":0,\"unusedImports\":0,\"routeEntrypoints\":0,\"deletionCandidates\":0},\"findings\":{\"brokenImports\":[],\"orphanFiles\":[],\"deadExports\":[],\"unusedImports\":[],\"routeEntrypoints\":[],\"deletionCandidates\":[]},\"cleanSafety\":{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[]},\"graph\":{\"modules\":[]}}",
     )
     .expect("future-schema report should parse");
 
@@ -260,8 +260,10 @@ fn summary_and_markdown_formatters_accept_future_schema_versions() {
 
 #[test]
 fn incomplete_future_schema_reports_fail_fast_instead_of_rendering_defaults() {
-    let error = parse_report_json("{\"schemaVersion\":3,\"project\":{\"root\":\"/tmp/demo\"}}")
-        .expect_err("incomplete future-schema report should fail");
+    let error = parse_report_json(
+        "{\"schemaVersion\":4,\"project\":{\"root\":\"/tmp/demo\"},\"cleanSafety\":{\"fingerprintAlgorithm\":\"sha256\",\"candidates\":[]}}",
+    )
+    .expect_err("incomplete future-schema report should fail");
 
     assert!(error.to_string().contains("required object `summary`"));
 }
