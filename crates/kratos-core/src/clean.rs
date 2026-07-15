@@ -34,14 +34,30 @@ static QUARANTINE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CleanOutcome {
+    pub deleted_files: usize,
+    pub skipped_files: usize,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CleanApplyOutcome {
     /// Compatibility count for paths moved out of the code tree. The file bytes
     /// remain under `quarantined_files`; this does not mean a physical unlink.
     pub deleted_files: usize,
-    /// Last-known paths for every retained quarantine object, including residue
-    /// left by restored, skipped, or failed candidates.
+    /// Confirmed current paths for retained quarantine objects. If a moved
+    /// quarantine directory no longer has a trustworthy pathname, the candidate
+    /// is reported through `failed_files` without fabricating a path.
     pub quarantined_files: Vec<PathBuf>,
     pub skipped_files: usize,
     pub failed_files: Vec<CleanFailure>,
+}
+
+impl From<CleanApplyOutcome> for CleanOutcome {
+    fn from(value: CleanApplyOutcome) -> Self {
+        Self {
+            deleted_files: value.deleted_files,
+            skipped_files: value.skipped_files,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,12 +96,28 @@ pub fn clean_from_report_path(
     clean_from_report(&report, apply)
 }
 
+pub fn clean_from_report_path_detailed(
+    report_path: impl AsRef<Path>,
+    apply: bool,
+) -> KratosResult<CleanApplyOutcome> {
+    let report = load_clean_report(report_path)?;
+    clean_from_report_detailed(&report, apply)
+}
+
 pub fn clean_from_report_path_with_min_confidence(
     report_path: impl AsRef<Path>,
     min_confidence: f32,
 ) -> KratosResult<CleanOutcome> {
     let report = load_clean_report(report_path)?;
     clean_from_report_with_min_confidence(&report, min_confidence)
+}
+
+pub fn clean_from_report_path_with_min_confidence_detailed(
+    report_path: impl AsRef<Path>,
+    min_confidence: f32,
+) -> KratosResult<CleanApplyOutcome> {
+    let report = load_clean_report(report_path)?;
+    clean_from_report_with_min_confidence_detailed(&report, min_confidence)
 }
 
 pub fn load_clean_report(report_path: impl AsRef<Path>) -> KratosResult<ReportV2> {
@@ -132,11 +164,25 @@ pub fn clean_from_report_with_min_confidence(
     report: &ReportV2,
     min_confidence: f32,
 ) -> KratosResult<CleanOutcome> {
+    clean_from_report_with_min_confidence_detailed(report, min_confidence).map(Into::into)
+}
+
+pub fn clean_from_report_with_min_confidence_detailed(
+    report: &ReportV2,
+    min_confidence: f32,
+) -> KratosResult<CleanApplyOutcome> {
     let plan = plan_clean_candidates(report, min_confidence)?;
     apply_clean_plan(report, &plan)
 }
 
 pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOutcome> {
+    clean_from_report_detailed(report, apply).map(Into::into)
+}
+
+pub fn clean_from_report_detailed(
+    report: &ReportV2,
+    apply: bool,
+) -> KratosResult<CleanApplyOutcome> {
     if report.version < REPORT_V2 {
         return Err(KratosError::InvalidReportVersion {
             expected: REPORT_V2,
@@ -145,7 +191,7 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
     }
 
     if !apply {
-        return Ok(CleanOutcome {
+        return Ok(CleanApplyOutcome {
             deleted_files: 0,
             quarantined_files: Vec::new(),
             skipped_files: report.findings.deletion_candidates.len(),
@@ -153,7 +199,7 @@ pub fn clean_from_report(report: &ReportV2, apply: bool) -> KratosResult<CleanOu
         });
     }
 
-    clean_from_report_with_min_confidence(report, 0.0)
+    clean_from_report_with_min_confidence_detailed(report, 0.0)
 }
 
 #[doc(hidden)]
@@ -261,7 +307,10 @@ fn validate_clean_threshold_inputs(report: &ReportV2, min_confidence: f32) -> Kr
     Ok(())
 }
 
-fn apply_clean_plan(report: &ReportV2, plan: &CleanThresholdPlan) -> KratosResult<CleanOutcome> {
+fn apply_clean_plan(
+    report: &ReportV2,
+    plan: &CleanThresholdPlan,
+) -> KratosResult<CleanApplyOutcome> {
     apply_clean_plan_with_hooks(report, plan, |_| {}, |_| {})
 }
 
@@ -270,7 +319,7 @@ fn apply_clean_plan_with_hook<F>(
     report: &ReportV2,
     plan: &CleanThresholdPlan,
     before_quarantine: F,
-) -> KratosResult<CleanOutcome>
+) -> KratosResult<CleanApplyOutcome>
 where
     F: FnMut(&Path),
 {
@@ -282,12 +331,12 @@ fn apply_clean_plan_with_hooks<F, G>(
     plan: &CleanThresholdPlan,
     mut before_quarantine: F,
     mut after_quarantine_verification: G,
-) -> KratosResult<CleanOutcome>
+) -> KratosResult<CleanApplyOutcome>
 where
     F: FnMut(&Path),
     G: FnMut(&Path),
 {
-    let mut outcome = CleanOutcome {
+    let mut outcome = CleanApplyOutcome {
         deleted_files: 0,
         quarantined_files: Vec::new(),
         skipped_files: plan.threshold_skipped_targets.len(),
@@ -325,7 +374,14 @@ where
                     outcome.quarantined_files.push(path);
                 }
             }
-            QuarantineOutcome::Failed(error, retained_path) => {
+            QuarantineOutcome::Failed {
+                error,
+                retained_path,
+                removed_from_code_tree,
+            } => {
+                if removed_from_code_tree {
+                    outcome.deleted_files += 1;
+                }
                 if let Some(path) = retained_path {
                     outcome.quarantined_files.push(path);
                 }
@@ -365,7 +421,11 @@ fn snapshot_from_entry(entry: &CleanCandidateFingerprint) -> Option<FileSnapshot
 enum QuarantineOutcome {
     Quarantined(PathBuf),
     Skipped(Option<PathBuf>),
-    Failed(String, Option<PathBuf>),
+    Failed {
+        error: String,
+        retained_path: Option<PathBuf>,
+        removed_from_code_tree: bool,
+    },
 }
 
 #[cfg(unix)]
@@ -403,11 +463,11 @@ where
 
     let candidate_name = match cstring_file_name(candidate_path) {
         Ok(name) => name,
-        Err(error) => return QuarantineOutcome::Failed(error.to_string(), None),
+        Err(error) => return failed_before_move(error.to_string()),
     };
     let quarantine = match QuarantineDirectory::create(report_root) {
         Ok(directory) => directory,
-        Err(error) => return QuarantineOutcome::Failed(error.to_string(), None),
+        Err(error) => return failed_before_move(error.to_string()),
     };
     let quarantined_path = quarantine.path.join("candidate");
 
@@ -421,7 +481,7 @@ where
         return if error.kind() == ErrorKind::NotFound {
             QuarantineOutcome::Skipped(None)
         } else {
-            QuarantineOutcome::Failed(error.to_string(), None)
+            failed_before_move(error.to_string())
         };
     }
 
@@ -430,11 +490,12 @@ where
     let quarantine_file_valid = quarantine_candidate_matches(&quarantine.directory, expected);
     let verified = source_path_valid && quarantine_path_valid && quarantine_file_valid;
     if !verified {
-        return restore_or_preserve(
+        return fail_after_move_without_restore(
+            report_root,
             &quarantine,
-            &source_parent,
-            &candidate_name,
             &quarantined_path,
+            candidate_path,
+            "격리 이동 후 검증이 실패했습니다",
         );
     }
 
@@ -444,33 +505,36 @@ where
         && quarantine.path_is_pinned(report_root)
         && quarantine_candidate_matches(&quarantine.directory, expected);
     if !still_verified {
-        return restore_or_preserve(
+        return fail_after_move_without_restore(
+            report_root,
             &quarantine,
-            &source_parent,
-            &candidate_name,
             &quarantined_path,
+            candidate_path,
+            "격리 검증 후 경로 또는 객체가 변경되었습니다",
         );
     }
 
     match std::fs::symlink_metadata(candidate_path) {
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Ok(_) => {
-            return QuarantineOutcome::Failed(
-                format!(
+            return QuarantineOutcome::Failed {
+                error: format!(
                     "원래 코드 경로가 다시 생성되어 격리 완료로 보고하지 않습니다. 보존 위치: {}",
                     quarantined_path.display()
                 ),
-                Some(quarantined_path),
-            );
+                retained_path: Some(quarantined_path),
+                removed_from_code_tree: false,
+            };
         }
         Err(error) => {
-            return QuarantineOutcome::Failed(
-                format!(
+            return QuarantineOutcome::Failed {
+                error: format!(
                     "원래 코드 경로의 부재를 확인하지 못했습니다. 보존 위치: {} ({error})",
                     quarantined_path.display()
                 ),
-                Some(quarantined_path),
-            );
+                retained_path: Some(quarantined_path),
+                removed_from_code_tree: false,
+            };
         }
     }
 
@@ -607,39 +671,58 @@ fn quarantine_candidate_matches(directory: &File, expected: &FileSnapshot) -> bo
 }
 
 #[cfg(unix)]
-fn retained_quarantine_path(
-    quarantine: &QuarantineDirectory,
-    quarantined_path: &Path,
-) -> Option<PathBuf> {
-    open_file_at(&quarantine.directory, quarantine_candidate_name())
-        .and_then(inspect_open_regular_file)
-        .ok()
-        .map(|_| quarantined_path.to_path_buf())
+fn quarantine_entry_exists(directory: &File) -> bool {
+    let mut metadata = std::mem::MaybeUninit::<libc::stat>::uninit();
+    unsafe {
+        libc::fstatat(
+            directory.as_raw_fd(),
+            quarantine_candidate_name().as_ptr(),
+            metadata.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        ) == 0
+    }
+}
+
+fn failed_before_move(error: String) -> QuarantineOutcome {
+    QuarantineOutcome::Failed {
+        error,
+        retained_path: None,
+        removed_from_code_tree: false,
+    }
 }
 
 #[cfg(unix)]
-fn restore_or_preserve(
+fn fail_after_move_without_restore(
+    report_root: &Path,
     quarantine: &QuarantineDirectory,
-    source_parent: &File,
-    candidate_name: &CStr,
     quarantined_path: &Path,
+    candidate_path: &Path,
+    reason: &str,
 ) -> QuarantineOutcome {
-    match link_at(
-        &quarantine.directory,
-        quarantine_candidate_name(),
-        source_parent,
-        candidate_name,
-    ) {
-        Ok(()) => {
-            QuarantineOutcome::Skipped(retained_quarantine_path(quarantine, quarantined_path))
-        }
-        Err(error) => QuarantineOutcome::Failed(
-            format!(
-                "검증 실패 파일을 복원하지 못했습니다. 보존 위치: {} ({error})",
-                quarantined_path.display()
-            ),
-            retained_quarantine_path(quarantine, quarantined_path),
+    let retained = quarantine_entry_exists(&quarantine.directory);
+    let retained_path = (retained && quarantine.path_is_pinned(report_root))
+        .then(|| quarantined_path.to_path_buf());
+    let removed_from_code_tree = matches!(
+        std::fs::symlink_metadata(candidate_path),
+        Err(error) if error.kind() == ErrorKind::NotFound
+    );
+    let residue = if retained_path.is_some() {
+        format!(
+            "마지막으로 확인된 보존 위치: {}",
+            quarantined_path.display()
+        )
+    } else if retained {
+        "격리 객체는 pinned descriptor에 남아 있지만 현재 pathname을 확인할 수 없습니다".to_string()
+    } else {
+        "격리 entry가 더 이상 존재하지 않습니다".to_string()
+    };
+
+    QuarantineOutcome::Failed {
+        error: format!(
+            "{reason}. 미검증 entry는 원래 코드 경로로 자동 복원하지 않습니다. {residue}"
         ),
+        retained_path,
+        removed_from_code_tree,
     }
 }
 
@@ -747,25 +830,6 @@ fn rename_at(
 }
 
 #[cfg(unix)]
-fn link_at(
-    old_parent: &File,
-    old_name: &CStr,
-    new_parent: &File,
-    new_name: &CStr,
-) -> std::io::Result<()> {
-    let result = unsafe {
-        libc::linkat(
-            old_parent.as_raw_fd(),
-            old_name.as_ptr(),
-            new_parent.as_raw_fd(),
-            new_name.as_ptr(),
-            0,
-        )
-    };
-    zero_or_last_error(result)
-}
-
-#[cfg(unix)]
 fn zero_or_last_error(result: libc::c_int) -> std::io::Result<()> {
     if result == 0 {
         Ok(())
@@ -850,10 +914,12 @@ mod tests {
         .expect("clean should stay fail closed");
 
         assert_eq!(outcome.quarantined_files.len(), 1);
-        assert_eq!(outcome.skipped_files, 1);
-        assert!(outcome.failed_files.is_empty());
+        assert_eq!(outcome.skipped_files, 0);
+        assert_eq!(outcome.failed_files.len(), 1);
+        assert!(!file.exists());
         assert_eq!(
-            std::fs::read_to_string(&file).expect("replacement should remain"),
+            std::fs::read_to_string(&outcome.quarantined_files[0])
+                .expect("replacement should remain quarantined"),
             "replacement\n"
         );
     }
@@ -887,6 +953,7 @@ mod tests {
         .expect("per-file failure should be reported in the outcome");
 
         assert_eq!(outcome.quarantined_files.len(), 1, "{outcome:?}");
+        assert_eq!(outcome.deleted_files, 2, "{outcome:?}");
         assert_eq!(outcome.skipped_files, 0);
         assert_eq!(outcome.failed_files.len(), 1);
         assert_eq!(outcome.failed_files[0].file, second);
@@ -915,13 +982,13 @@ mod tests {
         .expect("clean should stay fail closed");
 
         assert_eq!(outcome.quarantined_files.len(), 1);
-        assert_eq!(outcome.skipped_files, 1);
-        assert!(outcome.failed_files.is_empty());
+        assert_eq!(outcome.skipped_files, 0);
+        assert_eq!(outcome.failed_files.len(), 1);
         assert_eq!(
             std::fs::read_to_string(&outside_file).expect("outside file should remain"),
             "outside\n"
         );
-        assert!(saved_nested.join("dead.ts").exists());
+        assert!(!saved_nested.join("dead.ts").exists());
     }
 
     #[cfg(unix)]
@@ -978,7 +1045,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn redirected_parent_with_matching_hardlink_is_skipped_without_deletion() {
+    fn redirected_parent_with_matching_hardlink_fails_without_restore() {
         let root = temp_dir("clean-parent-hardlink-race");
         let parent = root.join("nested");
         let moved_parent = root.join("moved-nested");
@@ -998,16 +1065,16 @@ mod tests {
             std::os::unix::fs::symlink(&outside, &parent)
                 .expect("redirecting parent symlink should install");
         })
-        .expect("clean should restore the redirected pathname");
+        .expect("clean should retain without restoring the redirected pathname");
 
         assert_eq!(outcome.quarantined_files.len(), 1);
-        assert_eq!(outcome.skipped_files, 1);
-        assert!(outcome.failed_files.is_empty());
+        assert_eq!(outcome.skipped_files, 0);
+        assert_eq!(outcome.failed_files.len(), 1);
         assert_eq!(
             std::fs::read_to_string(&outside_candidate).expect("outside hardlink should remain"),
             "candidate\n"
         );
-        assert!(moved_candidate.exists());
+        assert!(!moved_candidate.exists());
     }
 
     #[cfg(unix)]
@@ -1034,11 +1101,14 @@ mod tests {
                     .expect("redirecting quarantine symlink should install");
             },
         )
-        .expect("clean should restore from the pinned quarantine descriptor");
+        .expect("clean should retain through the pinned quarantine descriptor");
 
-        assert_eq!(outcome.quarantined_files.len(), 1);
-        assert_eq!(outcome.skipped_files, 1);
-        assert!(outcome.failed_files.is_empty());
+        assert_eq!(outcome.quarantined_files.len(), 0);
+        assert_eq!(outcome.skipped_files, 0);
+        assert_eq!(outcome.failed_files.len(), 1);
+        assert!(outcome.failed_files[0]
+            .error
+            .contains("현재 pathname을 확인할 수 없습니다"));
         assert_eq!(
             std::fs::read_to_string(&outside_target).expect("outside target should remain"),
             "outside\n"
@@ -1048,7 +1118,7 @@ mod tests {
                 .expect("verified bytes remain retained in moved quarantine"),
             "candidate\n"
         );
-        assert!(candidate.exists());
+        assert!(!candidate.exists());
     }
 
     #[cfg(unix)]

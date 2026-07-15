@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use kratos_core::clean::{
-    clean_candidate_safety_status, clean_from_report, clean_from_report_path,
+    clean_candidate_safety_status, clean_from_report_detailed, clean_from_report_path_detailed,
     current_file_identity, current_parent_identity, CleanSafetyStatus,
 };
 use kratos_core::clean_preview::build_clean_preview;
@@ -23,7 +23,7 @@ fn clean_rejects_deletion_candidates_outside_report_root() {
     std::fs::write(&outside_file, "export const keep = true;\n").expect("outside file writes");
 
     let report = report_with_candidate(&report_root, &outside_file);
-    let outcome = clean_from_report(&report, true).expect("clean should succeed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should succeed");
 
     assert!(outside_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -44,7 +44,7 @@ fn clean_rejects_symlink_escape_candidates() {
     symlink_dir(&outside_root, &symlink_path);
 
     let report = report_with_candidate(&report_root, &symlink_path.join("target.ts"));
-    let outcome = clean_from_report(&report, true).expect("clean should succeed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should succeed");
 
     assert!(outside_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -61,7 +61,7 @@ fn clean_skips_dangling_symlink_candidates_without_fingerprints() {
     symlink_file(Path::new("missing-target.ts"), &dangling_link);
 
     let report = report_with_candidate(&report_root, &dangling_link);
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(
         std::fs::symlink_metadata(&dangling_link).is_ok(),
@@ -85,7 +85,7 @@ fn clean_skips_live_symlink_candidates_without_touching_targets() {
     symlink_file(&outside_file, &symlink_path);
 
     let report = report_with_candidate(&report_root, &symlink_path);
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(
         std::fs::symlink_metadata(&symlink_path).is_ok(),
@@ -114,7 +114,7 @@ fn clean_skips_direct_symlink_even_with_forged_matching_evidence() {
     report.clean_safety.candidates[0].fingerprint = regular_file_fingerprint(&outside_file);
     report.clean_safety.candidates[0].identity = current_file_identity(&outside_file);
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(std::fs::symlink_metadata(&symlink_path).is_ok());
     assert!(outside_file.exists());
@@ -135,7 +135,7 @@ fn clean_allows_symlinked_project_root_without_removing_parent_directories() {
     symlink_dir(&real_root, &symlink_root);
 
     let report = report_with_candidate(&symlink_root, &symlink_root.join("orphan/dead.ts"));
-    let outcome = clean_from_report(&report, true).expect("clean should succeed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should succeed");
 
     assert!(!dead_file.exists());
     assert!(nested_dir.exists());
@@ -156,7 +156,7 @@ fn clean_quarantines_through_root_contained_symlink_parent_without_parent_cleanu
     symlink_dir(&real_nested_dir, &symlink_nested_dir);
 
     let report = report_with_candidate(&report_root, &symlink_nested_dir.join("dead.ts"));
-    let outcome = clean_from_report(&report, true).expect("clean should stay best-effort");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should stay best-effort");
 
     assert!(!dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 1);
@@ -184,8 +184,8 @@ fn clean_from_report_path_accepts_future_schema_reports_when_shape_is_compatible
     )
     .expect("report writes");
 
-    let outcome =
-        clean_from_report_path(&report_path, true).expect("future-schema clean should work");
+    let outcome = clean_from_report_path_detailed(&report_path, true)
+        .expect("future-schema clean should work");
 
     assert!(!dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 1);
@@ -207,8 +207,8 @@ fn clean_from_report_path_rejects_legacy_v1_reports() {
     )
     .expect("report writes");
 
-    let error =
-        clean_from_report_path(&report_path, true).expect_err("v1 reports should be rejected");
+    let error = clean_from_report_path_detailed(&report_path, true)
+        .expect_err("v1 reports should be rejected");
 
     match error {
         KratosError::InvalidReportVersion { expected, found } => {
@@ -231,7 +231,8 @@ fn clean_from_report_rejects_reports_older_than_v2() {
     let mut report = report_with_candidate(&report_root, &dead_file);
     report.version = 1;
 
-    let error = clean_from_report(&report, true).expect_err("older reports should be rejected");
+    let error =
+        clean_from_report_detailed(&report, true).expect_err("older reports should be rejected");
 
     match error {
         KratosError::InvalidReportVersion { expected, found } => {
@@ -257,8 +258,8 @@ fn clean_from_report_path_reads_current_report_and_quarantines_unchanged_candida
     let serialized = serialize_report_pretty(&report).expect("report should serialize");
     std::fs::write(&report_path, serialized).expect("report should write");
 
-    let outcome =
-        clean_from_report_path(&report_path, true).expect("clean_from_report_path should work");
+    let outcome = clean_from_report_path_detailed(&report_path, true)
+        .expect("clean_from_report_path should work");
 
     assert!(!dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 1);
@@ -285,7 +286,7 @@ fn clean_skips_candidate_when_content_changed_after_report() {
     let report = report_with_candidate(&report_root, &dead_file);
     std::fs::write(&dead_file, "export const nowUsed = true;\n").expect("file should change");
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -305,7 +306,7 @@ fn clean_skips_candidate_recreated_at_the_same_path() {
     std::fs::write(&dead_file, "export const replacement = true;\n")
         .expect("replacement file writes");
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -325,7 +326,7 @@ fn clean_skips_same_content_file_recreated_at_the_same_path() {
     std::fs::remove_file(&dead_file).expect("old file should delete");
     std::fs::write(&dead_file, content).expect("same-content replacement should write");
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -343,7 +344,7 @@ fn clean_skips_safe_false_even_with_a_matching_fingerprint() {
     let mut report = report_with_candidate(&report_root, &dead_file);
     report.findings.deletion_candidates[0].safe = false;
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -362,7 +363,7 @@ fn clean_skips_schema_v2_candidate_without_fingerprint_evidence() {
     report.version = 2;
     report.clean_safety = Default::default();
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -380,7 +381,7 @@ fn clean_skips_missing_file_after_report_generation() {
     let report = report_with_candidate(&report_root, &dead_file);
     std::fs::remove_file(&dead_file).expect("candidate should be removable before clean");
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(!dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -399,7 +400,7 @@ fn clean_skips_candidate_replaced_by_a_non_regular_file() {
     std::fs::remove_file(&dead_file).expect("candidate should be removable before replacement");
     std::fs::create_dir(&dead_file).expect("directory replacement should be created");
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.is_dir());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -417,7 +418,7 @@ fn clean_skips_unsupported_fingerprint_algorithm() {
     let mut report = report_with_candidate(&report_root, &dead_file);
     report.clean_safety.fingerprint_algorithm = "sha512".to_string();
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -443,7 +444,7 @@ fn clean_skips_duplicate_fingerprint_entries() {
         CleanSafetyStatus::DuplicateFingerprint
     );
 
-    let outcome = clean_from_report(&report, true).expect("clean should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("clean should fail closed");
 
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
@@ -471,7 +472,7 @@ fn duplicate_normalized_deletion_candidates_fail_closed_in_preview_and_apply() {
         .iter()
         .all(|item| item.safety_status == CleanSafetyStatus::DuplicateCandidate));
 
-    let outcome = clean_from_report(&report, true).expect("apply should fail closed");
+    let outcome = clean_from_report_detailed(&report, true).expect("apply should fail closed");
     assert!(dead_file.exists());
     assert_eq!(outcome.quarantined_files.len(), 0);
     assert_eq!(outcome.skipped_files, 2);

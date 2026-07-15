@@ -34,7 +34,7 @@
 - usage:
   - `kratos sweep [report-path-or-root] [--min-confidence value] [--yes]`
 - prompt actions:
-  - `y`: accept current file for deletion
+  - `y`: accept current file for retained quarantine
   - `n`: skip current file
   - `s`: write suppression rule and skip current file
   - `a`: accept all remaining eligible files
@@ -45,16 +45,16 @@
 1. `clean`과 같은 input resolution helper를 써서 report를 읽는다.
 2. preview helper 결과를 하나씩 보여주고 line prompt를 받는다.
 3. `s`를 누르면 exact suppression rule을 `.kratos/suppressions.json`에 append하고 현재 item은 삭제 후보에서 제외한다.
-4. prompt loop가 끝난 뒤 accepted item이 있으면 그 path들만 delete helper에 넘긴다.
+4. prompt loop가 끝난 뒤 accepted item이 있으면 그 path들만 retained-quarantine helper에 넘긴다.
 5. `--yes`는 interactive prompt 없이 threshold/suppression을 통과한 모든 item을 accept한다.
-6. summary에는 `deleted`, `suppressed`, `skipped`, `below threshold`, `remaining untouched`를 모두 보여준다.
+6. summary에는 `removed from code tree`, `retained quarantine`, `suppressed`, `skipped`, `below threshold`, `remaining untouched`를 모두 보여준다.
 
 ## Done Criteria
 
 - [ ] `sweep`가 interactive mode와 `--yes` mode를 모두 가진다.
 - [ ] suppression write가 `.kratos/suppressions.json`에 누적된다.
 - [ ] `sweep`가 report input만 사용하고 implicit rescan을 하지 않는다.
-- [ ] no-selection path에서 파일이 삭제되지 않는 회귀 테스트가 있다.
+- [ ] no-selection path에서 파일이 원래 코드 경로에서 격리되지 않는 회귀 테스트가 있다.
 
 ## Out Of Scope
 

@@ -212,7 +212,7 @@ test("packed root package boots the actual native addon for the current platform
       cwd: installRoot,
     });
     assert.equal(cleanResult.status, 0, cleanResult.stderr || cleanResult.stdout);
-    assert.match(cleanResult.stdout, new RegExp(`보존된 격리 파일: ${originalCandidates.length}`));
+    assert.match(cleanResult.stdout, new RegExp(`현재 경로가 확인된 격리 파일: ${originalCandidates.length}`));
     for (const candidate of originalCandidates) {
       assert.equal(fs.existsSync(candidate.file), false, `Expected code path to be quarantined: ${candidate.file}`);
     }
