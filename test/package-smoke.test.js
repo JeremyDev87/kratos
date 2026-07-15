@@ -144,6 +144,32 @@ test("packed root package boots the actual native addon for the current platform
       report.findings.deletionCandidates.every((candidate) => candidate.safe === false),
       true,
     );
+
+    const cleanProjectPath = path.join(tempRoot, "windows-clean-project");
+    const cleanReportPath = path.join(tempRoot, "windows-clean-report.json");
+    await fsp.cp(demoAppPath, cleanProjectPath, { recursive: true });
+    const scanForClean = runInstalledKratos(
+      installRoot,
+      ["scan", cleanProjectPath, "--output", cleanReportPath, "--json"],
+      { cwd: installRoot },
+    );
+    assert.equal(scanForClean.status, 0, scanForClean.stderr || scanForClean.stdout);
+
+    const cleanReport = JSON.parse(await fsp.readFile(cleanReportPath, "utf8"));
+    const preservedCandidates = await Promise.all(
+      cleanReport.findings.deletionCandidates.map(async (candidate) => ({
+        file: candidate.file,
+        contents: await fsp.readFile(candidate.file),
+      })),
+    );
+    assert.ok(preservedCandidates.length > 0, "Windows clean smoke requires a deletion candidate");
+    const cleanResult = runInstalledKratos(installRoot, ["clean", cleanReportPath, "--apply"], {
+      cwd: installRoot,
+    });
+    assert.equal(cleanResult.status, 0, cleanResult.stderr || cleanResult.stdout);
+    for (const candidate of preservedCandidates) {
+      assert.deepEqual(await fsp.readFile(candidate.file), candidate.contents);
+    }
   } else {
     assert.equal(
       report.cleanSafety.candidates.every(
