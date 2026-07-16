@@ -89,6 +89,7 @@ test("packed root package installs the platform addon through optionalDependenci
 
 test("packed root package boots the actual native addon for the current platform", async (t) => {
   const nativeLibraryPath = process.env.KRATOS_PACKAGE_SMOKE_NATIVE_LIB;
+  const currentAddonTarballPath = process.env.KRATOS_PACKAGE_SMOKE_ADDON_TARBALL;
 
   if (!nativeLibraryPath) {
     t.skip("KRATOS_PACKAGE_SMOKE_NATIVE_LIB is not set");
@@ -96,19 +97,37 @@ test("packed root package boots the actual native addon for the current platform
   }
 
   const resolvedNativeLibraryPath = path.resolve(repoRoot, nativeLibraryPath);
+  const resolvedCurrentAddonTarballPath = currentAddonTarballPath
+    ? path.resolve(currentAddonTarballPath)
+    : null;
   assert.equal(
     fs.existsSync(resolvedNativeLibraryPath),
     true,
     `Expected native library at ${resolvedNativeLibraryPath}`,
   );
+  if (resolvedCurrentAddonTarballPath) {
+    assert.equal(
+      fs.existsSync(resolvedCurrentAddonTarballPath),
+      true,
+      `Expected CI-packed addon tarball at ${resolvedCurrentAddonTarballPath}`,
+    );
+  }
 
   const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "kratos-package-native-smoke-"));
   const rootPackage = await packRootTarball(tempRoot);
   const addonTarballs = await packAddonTarballs(tempRoot, {
     nativeLibraryPath: resolvedNativeLibraryPath,
+    currentAddonTarballPath: resolvedCurrentAddonTarballPath,
   });
-  const installRoot = await installPackedRootPackage(tempRoot, rootPackage, addonTarballs);
   const addonPackageName = resolveAddonPackageName();
+  if (resolvedCurrentAddonTarballPath) {
+    assert.equal(
+      addonTarballs[addonPackageName].tarballPath,
+      resolvedCurrentAddonTarballPath,
+      "Expected the CI-packed current-platform addon tarball to reach the root consumer install",
+    );
+  }
+  const installRoot = await installPackedRootPackage(tempRoot, rootPackage, addonTarballs);
   const installedAddonPath = path.join(installRoot, "node_modules", ...addonPackageName.split("/"));
   const demoAppPath = path.join(repoRoot, "fixtures", "demo-app");
 
@@ -323,12 +342,21 @@ async function installPackedRootPackage(tempRoot, rootPackage, addonTarballs) {
   return installRoot;
 }
 
-async function packAddonTarballs(tempRoot, { outputPath, nativeLibraryPath } = {}) {
+async function packAddonTarballs(
+  tempRoot,
+  { outputPath, nativeLibraryPath, currentAddonTarballPath } = {},
+) {
   const tarballs = {};
   const currentAddonPackageName = nativeLibraryPath ? resolveAddonPackageName() : null;
 
   for (const target of ADDON_TARGETS) {
     const packageName = resolveAddonPackageName(target.platform, target.arch);
+    if (packageName === currentAddonPackageName && currentAddonTarballPath) {
+      tarballs[packageName] = {
+        tarballPath: currentAddonTarballPath,
+      };
+      continue;
+    }
     const packageSlug = packageName.split("/").pop();
     const packageRoot = path.join(tempRoot, `${packageSlug}-package`);
     const useNativeAddon = packageName === currentAddonPackageName;
