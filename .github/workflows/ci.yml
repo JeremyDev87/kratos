@@ -323,4 +323,5 @@ jobs:
         shell: bash
         env:
           KRATOS_PACKAGE_SMOKE_NATIVE_LIB: ${{ matrix.built_library }}
+          KRATOS_PACKAGE_SMOKE_ADDON_TARBALL: ${{ github.workspace }}/${{ steps.addon_pack.outputs.tarball }}
         run: node --test test/package-smoke.test.js
