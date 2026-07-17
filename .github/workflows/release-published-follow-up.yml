@@ -59,6 +59,12 @@ jobs:
             echo "publishedAt=$published_at"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Checkout published release tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.meta.outputs.tag }}
+          fetch-depth: 0
+
       - name: Locate matching release publish run
         id: publish_run
         shell: bash
@@ -133,13 +139,14 @@ jobs:
         id: publish_run_final
         shell: bash
         run: |
-          run_json=$(gh run view "${{ steps.publish_run.outputs.databaseId }}" --json databaseId,displayTitle,event,headBranch,status,conclusion,url,createdAt)
+          run_json=$(gh run view "${{ steps.publish_run.outputs.databaseId }}" --json databaseId,displayTitle,event,headBranch,headSha,status,conclusion,url,createdAt)
 
           {
             echo "databaseId=$(printf '%s' "$run_json" | jq -r '.databaseId')"
             echo "displayTitle=$(printf '%s' "$run_json" | jq -r '.displayTitle')"
             echo "event=$(printf '%s' "$run_json" | jq -r '.event')"
             echo "headBranch=$(printf '%s' "$run_json" | jq -r '.headBranch // ""')"
+            echo "headSha=$(printf '%s' "$run_json" | jq -r '.headSha // ""')"
             echo "status=$(printf '%s' "$run_json" | jq -r '.status')"
             echo "conclusion=$(printf '%s' "$run_json" | jq -r '.conclusion // ""')"
             echo "url=$(printf '%s' "$run_json" | jq -r '.url')"
@@ -158,6 +165,34 @@ jobs:
             echo "assetCount=$asset_count"
             echo "targetCommitish=$target_commitish"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Verify release provenance and npm dist-tags
+        if: ${{ steps.publish_run.outputs.found == 'true' && steps.publish_run_final.outputs.conclusion == 'success' }}
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          PUBLISH_HEAD_SHA: ${{ steps.publish_run_final.outputs.headSha }}
+        run: |
+          tag_sha=$(git rev-parse "${RELEASE_TAG}^{}")
+          if [ "$tag_sha" != "$PUBLISH_HEAD_SHA" ]; then
+            echo "Release tag $RELEASE_TAG resolves to $tag_sha, but Release Publish ran at $PUBLISH_HEAD_SHA"
+            exit 1
+          fi
+          node --input-type=module <<'NODE'
+          import { execFileSync } from "node:child_process";
+          import { readFileSync } from "node:fs";
+          import { assertPublishedReleaseDistTags } from "./scripts/lib/release.mjs";
+
+          const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+          assertPublishedReleaseDistTags(pkg, process.env.RELEASE_TAG, (packageName, version) => {
+            const output = execFileSync(
+              "npm",
+              ["view", `${packageName}@${version}`, "dist-tags", "--json", "--registry=https://registry.npmjs.org"],
+              { encoding: "utf8" },
+            );
+            return JSON.parse(output);
+          });
+          NODE
 
       - name: Fail when no matching release publish run exists
         if: ${{ steps.publish_run.outputs.found != 'true' }}

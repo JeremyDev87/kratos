@@ -152,6 +152,19 @@ jobs:
         if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
         run: cargo test --workspace
 
+      - name: Pack release candidate evidence
+        if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
+        id: candidate_package
+        shell: bash
+        run: |
+          mkdir -p dist/release-candidate
+          tarball=$(npm pack --pack-destination dist/release-candidate --cache ./.npm-cache)
+          sha256=$(shasum -a 256 "dist/release-candidate/$tarball" | awk '{print $1}')
+          {
+            echo "tarball=$tarball"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish release candidate summary
         if: ${{ steps.meta.outputs.shouldVerify == 'true' }}
         shell: bash
@@ -163,6 +176,10 @@ jobs:
             echo "- verified commit: \`${{ steps.meta.outputs.verifiedSha }}\`"
             echo "- version: \`${{ steps.meta.outputs.version }}\`"
             echo "- next tag: \`${{ steps.meta.outputs.tag }}\`"
+            echo "- expected npm dist-tag: \`${{ steps.meta.outputs.npmDistTag }}\`"
+            echo "- root tarball: \`${{ steps.candidate_package.outputs.tarball }}\`"
+            echo "- root tarball SHA-256: \`${{ steps.candidate_package.outputs.sha256 }}\`"
+            echo "- workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             echo
             echo "This workflow verifies version/tag alignment and core release checks on the pinned candidate commit."
             if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
