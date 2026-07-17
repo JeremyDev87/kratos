@@ -13,19 +13,19 @@ affected commit and do not infer a backport promise from the npm version.
 | Version or branch | Supported | Policy |
 | --- | --- | --- |
 | `master` | Yes | Default development branch for unreleased security fixes. |
-| Latest release | Yes | Newest published stable release. |
-| Current major | Yes | Supported release line sharing the latest stable major version, such as `1.x` for v1.0. |
-| Older releases | No | Earlier major versions and pre-v1.0 releases are unsupported unless maintainers announce an exception. |
+| `1.x` after v1.0 ships | Yes | Current supported release line; use its newest stable release. |
+| Pre-v1 `0.x` releases | No | No security backport or support promise before v1.0. |
+| Older major releases | No | Major lines older than the current supported major are unsupported unless maintainers announce an exception. |
 
 Definitions:
 
-- Latest release means the newest stable GitHub release or tag published from
-  `master`.
+- Latest supported release means the newest stable v1+ GitHub release or tag
+  published from `master`.
 - Current major means the active stable major release line that contains the
-  latest release. For v1.0, this is the `1.x` line.
-- Older releases means pre-v1.0 releases and any major release line older than
-  the current major. Upgrade to the latest supported release before requesting
-  a security fix.
+  latest supported release. After v1.0 ships, this is the `1.x` line.
+- Pre-v1 releases and major release lines older than the current major are
+  unsupported. Upgrade to the latest supported release before requesting a
+  security fix.
 
 ## Reporting a Vulnerability
 

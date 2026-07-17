@@ -16,6 +16,8 @@ Kratos es una herramienta de análisis para un flujo de limpieza seguro, no un b
 
 La versión npm actual es `0.3.7`; v1.0 aún no se ha publicado. El alcance v1 incluye `scan`, `report`, `diff`, `clean`, schema v3, `scan --no-write` y `clean --apply` con cuarentena retenida. Las plataformas sin evidencia de seguridad Unix descriptor-relative, incluido Windows, fallan de forma cerrada para `clean --apply`. `sweep`, `watch`, workspace/cache y reportes HTML son candidatos para v1.1+, no comandos prometidos hoy.
 
+Un candidato de lanzamiento alinea el candidate SHA con la versión del manifest y demuestra el paquete raíz empaquetado y el addon de plataforma mediante consumer smoke. Después de publicar, el GitHub Release/Publish run y el paquete raíz junto con cinco paquetes addon deben apuntar al npm dist-tag esperado y a la versión exacta.
+
 ## Capacidades Principales
 
 - Detectar archivos no usados y candidatos a componentes o módulos huérfanos
@@ -58,12 +60,13 @@ Cuando `scan --output` recibe una ruta relativa, se resuelve desde la raíz esca
 
 ## Comandos
 
-### `kratos scan [root] [--output path] [--json]`
+### `kratos scan [root] [--output path] [--no-write] [--json]`
 
 Analiza un proyecto y escribe un archivo JSON de reporte.
 
 - Omite `root` para escanear el directorio de trabajo actual.
 - `--output path` define la ruta de salida del reporte.
+- `--no-write` imprime el resultado del análisis sin crear un archivo de reporte.
 - `--json` imprime el JSON completo en stdout en lugar del resumen de consola.
 - La ruta de salida por defecto es `<root>/.kratos/latest-report.json`.
 

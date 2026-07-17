@@ -16,6 +16,8 @@ Kratos 是服务于安全清理流程的分析工具，不是自动删除机器�
 
 当前 npm 版本为 `0.3.7`，v1.0 尚未发布。v1 范围包括 `scan`、`report`、`diff`、`clean`、schema v3、`scan --no-write` 以及保留隔离式 `clean --apply`。无法提供 Unix descriptor-relative 安全证据的平台（包括 Windows）会对 `clean --apply` fail-closed。`sweep`、`watch`、workspace/cache 和 HTML report 都是 v1.1+ 候选，不是当前承诺的命令。
 
+发布候选会对齐 candidate SHA 与 manifest version，并通过 consumer smoke 验证已打包的 root package 和平台 addon。发布后，GitHub Release/Publish run 以及 root package + 5 个 addon package 都必须指向预期的 npm dist-tag 和精确版本。
+
 ## 核心能力
 
 - 检测未使用文件以及孤立 component/module 候选项
@@ -58,12 +60,13 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 ## 命令
 
-### `kratos scan [root] [--output path] [--json]`
+### `kratos scan [root] [--output path] [--no-write] [--json]`
 
 分析项目并写入 report JSON 文件。
 
 - 省略 `root` 时会扫描当前工作目录。
 - `--output path` 用于设置 report 输出路径。
+- `--no-write` 会输出分析结果，但不会创建 report 文件。
 - `--json` 会把完整 report JSON 输出到 stdout，而不是控制台 summary。
 - 默认输出路径是 `<root>/.kratos/latest-report.json`。
 
