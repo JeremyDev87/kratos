@@ -6,6 +6,10 @@ Kratos security support starts with the v1.0 release line. Security fixes are
 prepared on the default development branch, `master`, and released through the
 supported release lines below.
 
+The currently published `0.3.7` line is pre-v1 and is not a supported security
+release line. Until v1.0 ships, report an issue against `master` with the
+affected commit and do not infer a backport promise from the npm version.
+
 | Version or branch | Supported | Policy |
 | --- | --- | --- |
 | `master` | Yes | Default development branch for unreleased security fixes. |

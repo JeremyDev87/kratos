@@ -15,16 +15,16 @@ Kratos는 현재 Rust core/CLI와 npm launcher 기반으로 동작한다. 공개
 - `.gitignore` + `ignorePatterns` 기반 source discovery 제외
 - `clean` dry-run preview planner
 
-## Active Objective
+## Post-v1 Objective
 
-남은 roadmap은 현재 CLI 흐름을 유지하면서 다음 사용자 경험을 추가하는 것이다.
+아래 roadmap은 v1 동결 뒤의 v1.1+ 후보이며, 현재 CLI 흐름을 유지하면서 다음 사용자 경험을 추가하는 것이다.
 
 - self-contained HTML report
 - line-oriented `kratos sweep`
 - workspace manifest 기반 multi-root scan
 - incremental analysis cache
 - polling `kratos watch`
-- 최종 README/CONTRIBUTING 동기화와 전체 검증
+- 후속 README/CONTRIBUTING 동기화와 전체 검증
 
 릴리스 workflow 재설계, npm publish, release tag 생성은 이 roadmap 범위 밖이다.
 

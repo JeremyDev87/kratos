@@ -12,6 +12,12 @@ Kratos는 JavaScript/TypeScript 프로젝트에서 사용되지 않는 파일, �
 
 Kratos는 자동 삭제 도구라기보다 안전한 정리 흐름을 위한 분석 도구입니다. `clean`은 기본적으로 dry-run이며, `--apply`는 검증된 파일을 원래 코드 경로에서 `<root>/.kratos/clean-quarantine/`으로 이동해 보존합니다. 자동 물리 삭제는 수행하지 않습니다.
 
+## v1 상태와 안전 경계
+
+현재 npm 버전은 `0.3.7`이며 v1.0은 아직 출시되지 않았습니다. v1 범위는 `scan`, `report`, `diff`, `clean`, schema v3, `scan --no-write`, 그리고 보존 격리형 `clean --apply`입니다. Windows 등 Unix descriptor-relative 안전 검증을 제공하지 않는 플랫폼에서는 `clean --apply`가 fail-closed됩니다. `sweep`, `watch`, workspace/cache 및 HTML report는 v1.1+ 후보이며 현재 명령/기능으로 약속하지 않습니다.
+
+릴리스 후보는 candidate SHA와 manifest version을 맞춘 뒤, packed root package와 플랫폼 addon의 consumer smoke를 확인합니다. 게시 후에는 GitHub Release/Publish run, root+5 addon package, expected npm dist-tag가 같은 version을 가리키는지 감사합니다.
+
 ## 핵심 기능
 
 - 사용되지 않는 파일과 고립된 component/module 후보 탐지

@@ -12,6 +12,10 @@ Kratos 是面向 JavaScript 和 TypeScript 项目的 CLI 工具。它会找出�
 
 Kratos 是服务于安全清理流程的分析工具，不是自动删除机器人。`clean` 默认执行 dry-run。审阅 report 后，`--apply` 会把已验证文件移出原代码路径并保存在 `<root>/.kratos/clean-quarantine/`，不会自动物理删除。
 
+## v1 状态与安全边界
+
+当前 npm 版本为 `0.3.7`，v1.0 尚未发布。v1 范围包括 `scan`、`report`、`diff`、`clean`、schema v3、`scan --no-write` 以及保留隔离式 `clean --apply`。无法提供 Unix descriptor-relative 安全证据的平台（包括 Windows）会对 `clean --apply` fail-closed。`sweep`、`watch`、workspace/cache 和 HTML report 都是 v1.1+ 候选，不是当前承诺的命令。
+
 ## 核心能力
 
 - 检测未使用文件以及孤立 component/module 候选项

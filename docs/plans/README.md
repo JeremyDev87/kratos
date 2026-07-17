@@ -1,6 +1,6 @@
 # Kratos Planning Index
 
-이 디렉터리는 현재 `master` 기준으로 아직 남은 제품 계획만 유지한다. 완료된 Rust 전환 계획과 JS-era 계획은 active docs에서 제거했다.
+이 디렉터리는 현재 `master` 기준으로 아직 남은 제품 계획만 유지한다. 완료된 Rust 전환 계획과 JS-era 계획은 active docs에서 제거했다. v1은 `scan`, `report`, `diff`, `clean`, schema v3, `scan --no-write`, 보존 격리형 apply와 #91–#94 evidence gate까지만 동결한다. 아래 문서는 post-v1 backlog이며 현행 명령이나 v1 출시 약속이 아니다.
 
 ## Active Documents
 
@@ -15,7 +15,7 @@
 
 ## Current Baseline Snapshot
 
-- package: `@jeremyfellaz/kratos` `0.3.2`
+- package: `@jeremyfellaz/kratos` `0.3.7` (v1.0 미출시)
 - commands: `scan`, `report`, `diff`, `clean`
 - report formats: `summary`, `json`, `md`
 - implemented controls: `.gitignore`, `ignorePatterns`, suppression, clean confidence threshold

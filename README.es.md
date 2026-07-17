@@ -12,6 +12,10 @@ Kratos es una herramienta CLI para proyectos JavaScript y TypeScript. Encuentra 
 
 Kratos es una herramienta de análisis para un flujo de limpieza seguro, no un bot de eliminación automática. `clean` usa dry-run por defecto. Tras revisar el reporte, `--apply` mueve los archivos verificados fuera de sus rutas de código y los conserva en `<root>/.kratos/clean-quarantine/`; no los elimina físicamente de forma automática.
 
+## Estado de v1 y límite de seguridad
+
+La versión npm actual es `0.3.7`; v1.0 aún no se ha publicado. El alcance v1 incluye `scan`, `report`, `diff`, `clean`, schema v3, `scan --no-write` y `clean --apply` con cuarentena retenida. Las plataformas sin evidencia de seguridad Unix descriptor-relative, incluido Windows, fallan de forma cerrada para `clean --apply`. `sweep`, `watch`, workspace/cache y reportes HTML son candidatos para v1.1+, no comandos prometidos hoy.
+
 ## Capacidades Principales
 
 - Detectar archivos no usados y candidatos a componentes o módulos huérfanos
