@@ -16,6 +16,8 @@ Kratos は自動削除 bot ではなく、安全なクリーンアップ手順�
 
 現在の npm バージョンは `0.3.7` で、v1.0 は未リリースです。v1 の範囲は `scan`、`report`、`diff`、`clean`、schema v3、`scan --no-write`、保持型 quarantine の `clean --apply` です。Windows を含む Unix descriptor-relative の安全証跡を提供できない platform では、`clean --apply` は fail-closed になります。`sweep`、`watch`、workspace/cache、HTML report は v1.1+ 候補であり、現行コマンドではありません。
 
+リリース候補では candidate SHA と manifest version を一致させ、pack 済み root package と platform addon を consumer smoke で検証します。公開後は GitHub Release/Publish run と root package + 5 addon package が expected npm dist-tag と正確な version を指している必要があります。
+
 ## 主な機能
 
 - 未使用ファイルと孤立 component/module 候補の検出
@@ -58,12 +60,13 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 ## コマンド
 
-### `kratos scan [root] [--output path] [--json]`
+### `kratos scan [root] [--output path] [--no-write] [--json]`
 
 プロジェクトを解析し、report JSON ファイルを書き込みます。
 
 - `root` を省略すると現在の作業ディレクトリをスキャンします。
 - `--output path` は report の出力先を指定します。
+- `--no-write` は解析結果を出力しますが、report ファイルを作成しません。
 - `--json` はコンソール summary の代わりに完全な report JSON を stdout に出力します。
 - デフォルトの出力先は `<root>/.kratos/latest-report.json` です。
 

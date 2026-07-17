@@ -64,12 +64,13 @@ When `scan --output` receives a relative path, it is resolved from the scanned r
 
 ## Commands
 
-### `kratos scan [root] [--output path] [--json]`
+### `kratos scan [root] [--output path] [--no-write] [--json]`
 
 Analyzes a project and writes a report JSON file.
 
 - Omit `root` to scan the current working directory.
 - `--output path` sets the report output path.
+- `--no-write` prints the analysis result without creating a report file.
 - `--json` prints the full report JSON to stdout instead of the console summary.
 - The default output path is `<root>/.kratos/latest-report.json`.
 

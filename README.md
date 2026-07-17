@@ -64,12 +64,13 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 ## 명령어
 
-### `kratos scan [root] [--output path] [--json]`
+### `kratos scan [root] [--output path] [--no-write] [--json]`
 
 프로젝트를 분석하고 report JSON을 저장합니다.
 
 - `root`를 생략하면 현재 작업 디렉터리를 스캔합니다.
 - `--output path`는 report 저장 위치를 지정합니다.
+- `--no-write`는 분석 결과를 출력하되 report 파일을 생성하지 않습니다.
 - `--json`은 콘솔 요약 대신 전체 JSON report를 stdout으로 출력합니다.
 - 기본 출력 경로는 `<root>/.kratos/latest-report.json`입니다.
 
