@@ -18,6 +18,41 @@ export function resolveReleasePlan(tag) {
   };
 }
 
+export function releasePackageNames(packageManifest) {
+  if (!packageManifest || typeof packageManifest.name !== "string" || packageManifest.name.length === 0) {
+    throw new Error("Release package manifest must have a package name");
+  }
+
+  return [packageManifest.name, ...Object.keys(packageManifest.optionalDependencies ?? {}).sort()];
+}
+
+export function assertPublishedDistTag(distTags, distTag, expectedVersion) {
+  if (!distTags || Array.isArray(distTags) || typeof distTags !== "object") {
+    throw new Error("npm dist-tags response must be a JSON object");
+  }
+
+  const actualVersion = distTags[distTag];
+  if (typeof actualVersion !== "string") {
+    throw new Error(`npm package does not expose dist-tag ${distTag}`);
+  }
+  if (actualVersion !== expectedVersion) {
+    throw new Error(`npm dist-tag ${distTag} expected ${expectedVersion}, got ${actualVersion}`);
+  }
+}
+
+export function assertPublishedReleaseDistTags(packageManifest, tag, readDistTags) {
+  if (typeof readDistTags !== "function") {
+    throw new Error("Release dist-tag audit needs a registry lookup function");
+  }
+
+  const plan = resolveReleasePlan(tag);
+  for (const packageName of releasePackageNames(packageManifest)) {
+    assertPublishedDistTag(readDistTags(packageName, plan.version), plan.npmDistTag, plan.version);
+  }
+
+  return { tag: plan.tag, version: plan.version, npmDistTag: plan.npmDistTag };
+}
+
 function parseReleaseVersion(version) {
   const match = RELEASE_VERSION_PATTERN.exec(version);
 
