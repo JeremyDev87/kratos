@@ -30,27 +30,40 @@ jobs:
       GH_REPO: ${{ github.repository }}
 
     steps:
+      - name: Checkout trusted release helper
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
       - name: Resolve target release
         id: meta
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_RELEASE_URL: ${{ github.event.release.html_url }}
+          EVENT_PUBLISHED_AT: ${{ github.event.release.published_at }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
-            release_url="${{ github.event.release.html_url }}"
-            published_at="${{ github.event.release.published_at }}"
+          if [ "$EVENT_NAME" = "release" ]; then
+            tag="$EVENT_RELEASE_TAG"
           else
-            tag="${{ inputs.tag }}"
-            if [[ "$tag" != v* ]]; then
-              tag="v$tag"
-            fi
-
-            release_json=$(gh release view "$tag" --json url,publishedAt)
-            release_url=$(printf '%s' "$release_json" | jq -r '.url')
-            published_at=$(printf '%s' "$release_json" | jq -r '.publishedAt // ""')
+            tag="$INPUT_TAG"
           fi
 
           if [[ "$tag" != v* ]]; then
             tag="v$tag"
+          fi
+
+          node ./scripts/release-plan.mjs "$tag" >/dev/null
+
+          if [ "$EVENT_NAME" = "release" ]; then
+            release_url="$EVENT_RELEASE_URL"
+            published_at="$EVENT_PUBLISHED_AT"
+          else
+            release_json=$(gh release view "$tag" --json url,publishedAt)
+            release_url=$(printf '%s' "$release_json" | jq -r '.url')
+            published_at=$(printf '%s' "$release_json" | jq -r '.publishedAt // ""')
           fi
 
           {
@@ -62,7 +75,7 @@ jobs:
       - name: Checkout published release tag
         uses: actions/checkout@v5
         with:
-          ref: ${{ steps.meta.outputs.tag }}
+          ref: refs/tags/${{ steps.meta.outputs.tag }}
           fetch-depth: 0
 
       - name: Locate matching release publish run

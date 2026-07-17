@@ -75,6 +75,9 @@ jobs:
             npm install --no-package-lock
           fi
 
+      - name: Run release evidence contract tests
+        run: node --test test/release-evidence.test.js
+
       - name: Run verification
         run: npm run verify
 
