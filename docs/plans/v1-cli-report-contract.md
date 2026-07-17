@@ -1,6 +1,6 @@
 # Kratos v1 CLI/report contract evidence
 
-Issues: [#91](https://github.com/JeremyDev87/kratos/issues/91) contract baseline; [#92](https://github.com/JeremyDev87/kratos/issues/92) clean-safety migration
+Issues: [#91](https://github.com/JeremyDev87/kratos/issues/91) contract baseline; [#92](https://github.com/JeremyDev87/kratos/issues/92) clean-safety migration; [#93](https://github.com/JeremyDev87/kratos/issues/93) packed consumer artifact smoke; [#94](https://github.com/JeremyDev87/kratos/issues/94) release provenance evidence
 
 This note freezes the consumer-visible v1 CLI/report contract before any version bump. It is intentionally limited to command/report semantics and does not bump versions, create tags, publish packages, or dispatch release workflows.
 

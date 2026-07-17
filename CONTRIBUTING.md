@@ -85,6 +85,12 @@ npm run verify
 Also run `npm run smoke` when your change touches packaging, the launcher, or
 release automation.
 
+Release-facing changes also need an evidence bundle: candidate commit SHA and
+manifest-version alignment, `npm pack`/consumer-install smoke for the root and
+selected native addon, and—after publishing—an exact npm dist-tag, Publish-run,
+and GitHub Release check. Do not treat an unavailable platform or registry
+lookup as a passing fallback.
+
 If your change affects CLI behavior or documentation, include the command you
 ran and the observed result in the PR description. For command examples, prefer
 `./fixtures/demo-app` so reviewers can reproduce the same path locally.

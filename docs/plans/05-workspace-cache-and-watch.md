@@ -1,5 +1,7 @@
 # Kratos Workspace Cache And Watch Plan
 
+> Post-v1 (v1.1+) backlog. Workspace/cache/watch are not implemented v1 behavior.
+
 ## Objective
 
 Kratos를 단일 프로젝트 정리 도구에서 monorepo와 반복 실행에도 견디는 도구로 확장한다. 이 plan family는 workspace manifest 기반 root scan, incremental cache, 그리고 polling `watch` loop를 순차적으로 추가한다. 단일 package repo의 현재 동작은 유지되어야 한다.

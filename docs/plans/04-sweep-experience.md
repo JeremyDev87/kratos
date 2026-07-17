@@ -1,5 +1,7 @@
 # Kratos Sweep Experience Plan
 
+> Post-v1 (v1.1+) backlog. `kratos sweep` is not an implemented v1 command.
+
 ## Objective
 
 `clean`의 deletion candidate를 사용자가 하나씩 판단할 수 있는 guided cleanup UX로 연결한다. Pure clean preview planner는 이미 `crates/kratos-core/src/clean_preview.rs`에 존재하므로, 이 문서는 남은 `kratos sweep` CLI만 다룬다.

@@ -12,6 +12,12 @@ Kratos is a CLI tool for JavaScript and TypeScript projects. It finds unused fil
 
 Kratos is an analysis tool for a safe cleanup workflow, not an automatic deletion bot. `clean` is dry-run by default. After review, `--apply` moves verified files out of their code paths into retained storage under `<root>/.kratos/clean-quarantine/`; it does not physically unlink them automatically.
 
+## v1 status and safety boundary
+
+The current npm version is `0.3.7`; v1.0 has not shipped. The v1 scope is `scan`, `report`, `diff`, `clean`, schema v3, `scan --no-write`, and retained-quarantine `clean --apply`. Platforms that cannot provide Unix descriptor-relative safety evidence, including Windows, fail closed for `clean --apply`. `sweep`, `watch`, workspace/cache work, and HTML reports are v1.1+ candidates, not current commands or promises.
+
+A release candidate aligns its candidate SHA and manifest version, then proves a packed root package and platform addon through consumer smoke. After publishing, the GitHub Release/Publish run and the root plus five addon packages must point at the expected npm dist-tag and exact version.
+
 ## Core Capabilities
 
 - Detect unused files and orphaned component/module candidates

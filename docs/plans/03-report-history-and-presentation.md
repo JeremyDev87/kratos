@@ -1,5 +1,7 @@
 # Kratos Report Presentation Plan
 
+> Post-v1 (v1.1+) backlog. HTML output is not part of the frozen v1 contract.
+
 ## Objective
 
 현재 `kratos diff`와 `report --format summary|json|md`는 이미 구현되어 있다. 이 문서는 남은 presentation 작업인 self-contained HTML report만 다룬다.
