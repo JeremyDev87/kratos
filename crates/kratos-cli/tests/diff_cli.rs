@@ -34,6 +34,8 @@ fn diff_accepts_project_roots_and_report_paths() {
     assert!(stdout.contains(&format!("이전: {}", before_report_path.display())));
     assert!(stdout.contains(&format!("이후: {}", after_report_path.display())));
     assert!(stdout.contains("## 깨진 import"));
+    assert!(stdout.contains("Finding identity version: 1"));
+    assert!(stdout.contains("kratos:v1:"));
     assert!(stdout.contains("### 새로 발생 (1)"));
     assert!(stdout.contains("### 해결됨 (1)"));
     assert!(stdout.contains("./missing-b"));
@@ -113,6 +115,7 @@ fn diff_json_reports_full_shape() {
         value["after"]["path"],
         Value::from(after_report_path.to_string_lossy().to_string())
     );
+    assert_eq!(value["identityVersion"], Value::from(1));
     assert_eq!(
         value["summary"]["brokenImports"]["introduced"],
         Value::from(1)
@@ -121,6 +124,9 @@ fn diff_json_reports_full_shape() {
         value["findings"]["brokenImports"]["introduced"][0]["source"],
         Value::from("./missing-b")
     );
+    assert!(value["findings"]["brokenImports"]["introduced"][0]["id"]
+        .as_str()
+        .is_some_and(|id| id.starts_with("kratos:v1:") && id.len() == "kratos:v1:".len() + 64));
 }
 
 fn write_report(path: &Path, root: &Path, broken_source: &str) {

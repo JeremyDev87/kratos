@@ -90,6 +90,7 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 - 기본 형식은 `summary`입니다.
 - `json`은 introduced/resolved/persisted finding을 machine-readable 형식으로 출력합니다.
 - `md`는 리뷰나 이슈에 붙이기 쉬운 Markdown diff를 출력합니다.
+- JSON/Markdown diff는 `identityVersion: 1`과 전체 `kratos:v1:<sha256>` finding ID를 노출합니다. ID는 finding 종류, 정규화된 root-relative 경로, semantic locator로만 계산하며 reason, confidence, `safe`, `cleanSafety`, timestamp는 제외합니다.
 - 각 입력은 report 파일 경로 또는 프로젝트 root가 될 수 있습니다.
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`

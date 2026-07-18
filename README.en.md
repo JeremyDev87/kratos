@@ -90,7 +90,8 @@ Compares finding changes between two reports.
 - The default format is `summary`.
 - `json` prints introduced/resolved/persisted findings in a machine-readable shape.
 - `md` prints a Markdown diff suitable for reviews or issues.
-- Each input can be either a report file path or a project root.
+- JSON and Markdown diffs expose `identityVersion: 1` and the full `kratos:v1:<sha256>` finding ID. IDs use only the finding kind, normalized root-relative path, and semantic locator; reason, confidence, `safe`, `cleanSafety`, and timestamps are excluded.
+- Each input may be either a report file path or a project root.
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 
