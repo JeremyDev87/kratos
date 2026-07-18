@@ -83,10 +83,11 @@ Imprime un reporte guardado en un formato legible o como JSON original.
 
 Compara los cambios de hallazgos entre dos reportes.
 
-- El formato por defecto es `summary`.
+- El formato predeterminado es `summary`.
 - `json` imprime hallazgos introduced/resolved/persisted en una forma legible por máquina.
-- `md` imprime un diff Markdown útil para revisiones o issues.
-- Cada entrada puede ser una ruta de reporte o una raíz de proyecto.
+- `md` imprime un diff Markdown adecuado para revisiones o issues.
+- Los diffs JSON y Markdown exponen `identityVersion: 1` y el ID completo `kratos:v1:<sha256>`. El ID usa solo el tipo de hallazgo, la ruta normalizada relativa a la raíz y el localizador semántico; excluye reason, confidence, `safe`, `cleanSafety` y timestamps.
+- Cada entrada puede ser una ruta de archivo de reporte o la raíz de un proyecto.
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 

@@ -4,7 +4,8 @@ use std::io::Write;
 use clap::Parser;
 use kratos_core::report::parse_report_json;
 use kratos_core::report_diff::{
-    diff_reports, format_diff_json, format_diff_markdown, format_diff_summary,
+    diff_reports_with_identity, format_diff_json_with_identity, format_diff_markdown_with_identity,
+    format_diff_summary,
 };
 use kratos_core::{KratosError, KratosResult};
 
@@ -39,7 +40,7 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
     let after_raw = fs::read_to_string(&after_report_path)?;
     let before = parse_report_json(&before_raw)?;
     let after = parse_report_json(&after_raw)?;
-    let diff = diff_reports(&before, &after);
+    let diff = diff_reports_with_identity(&before, &after);
     let format = args.format.as_deref().unwrap_or("summary");
 
     match format {
@@ -49,11 +50,11 @@ pub fn run(args: &[String], stdout: &mut dyn Write) -> KratosResult<i32> {
         )?,
         "json" => write_output(
             stdout,
-            &format_diff_json(&diff, &before_report_path, &after_report_path)?,
+            &format_diff_json_with_identity(&diff, &before_report_path, &after_report_path)?,
         )?,
         "md" => write_output(
             stdout,
-            &format_diff_markdown(&diff, &before_report_path, &after_report_path)?,
+            &format_diff_markdown_with_identity(&diff, &before_report_path, &after_report_path)?,
         )?,
         other => return Err(KratosError::Config(format!("Invalid diff format: {other}"))),
     }

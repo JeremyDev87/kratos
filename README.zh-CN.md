@@ -85,8 +85,9 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 - 默认格式是 `summary`。
 - `json` 会用 machine-readable 结构输出 introduced/resolved/persisted findings。
-- `md` 会输出适合评审或 issue 的 Markdown diff。
-- 每个输入都可以是 report 文件路径或项目 root。
+- `md` 会输出适合粘贴到 review 或 issue 的 Markdown diff。
+- JSON/Markdown diff 会公开 `identityVersion: 1` 和完整的 `kratos:v1:<sha256>` finding ID。ID 只由 finding 类型、规范化的 root-relative 路径和 semantic locator 计算，不包含 reason、confidence、`safe`、`cleanSafety` 或 timestamp。
+- 每个输入都可以是 report 文件路径或项目根目录。
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 

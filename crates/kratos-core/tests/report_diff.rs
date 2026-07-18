@@ -6,9 +6,29 @@ use kratos_core::model::{
     OrphanKind, ReportV2, RouteEntrypointFinding, SummaryCounts, UnusedImportFinding,
 };
 use kratos_core::report_diff::{
-    diff_reports, format_diff_json, format_diff_markdown, format_diff_summary,
+    diff_reports, diff_reports_with_identity, format_diff_json, format_diff_json_with_identity,
+    format_diff_markdown, format_diff_markdown_with_identity, format_diff_summary, ReportDiff,
+    FINDING_IDENTITY_VERSION,
 };
 use serde_json::Value;
+
+#[test]
+fn legacy_report_diff_struct_literal_remains_source_compatible() {
+    let diff = ReportDiff {
+        summary: Default::default(),
+        findings: Default::default(),
+    };
+    let path = PathBuf::from("/tmp/report.json");
+
+    assert_eq!(diff.summary.totals.introduced, 0);
+    let json = format_diff_json(&diff, &path, &path).expect("legacy JSON should format");
+    let markdown =
+        format_diff_markdown(&diff, &path, &path).expect("legacy Markdown should format");
+    assert!(!json.contains("identityVersion"));
+    assert!(!json.contains("\"id\""));
+    assert!(!markdown.contains("Finding identity version"));
+    assert!(!markdown.contains("kratos:v1:"));
+}
 
 #[test]
 fn diff_reports_only_tracks_finding_changes_and_ignores_report_metadata() {
@@ -250,7 +270,7 @@ fn diff_formatters_render_summary_markdown_and_json() {
         ),
         vec![],
     );
-    let diff = diff_reports(&before, &after);
+    let diff = diff_reports_with_identity(&before, &after);
     let before_path = PathBuf::from("/tmp/before-report.json");
     let after_path = PathBuf::from("/tmp/after-report.json");
 
@@ -261,17 +281,30 @@ fn diff_formatters_render_summary_markdown_and_json() {
     assert!(summary.contains("깨진 import: 새로 발생 1, 해결됨 1, 유지됨 0"));
     assert!(summary.contains("합계: 새로 발생 1, 해결됨 1, 유지됨 0"));
 
-    let markdown =
-        format_diff_markdown(&diff, &before_path, &after_path).expect("markdown should format");
+    let markdown = format_diff_markdown_with_identity(&diff, &before_path, &after_path)
+        .expect("markdown should format");
     assert!(markdown.contains("# Kratos Diff 결과"));
+    assert!(markdown.contains("- Finding identity version: 1"));
     assert!(markdown.contains("## 깨진 import"));
     assert!(markdown.contains("### 새로 발생 (1)"));
     assert!(markdown.contains("### 해결됨 (1)"));
     assert!(markdown.contains("### 유지됨 (0)"));
     assert!(markdown.contains("- 없음"));
 
-    let json = format_diff_json(&diff, &before_path, &after_path).expect("json should format");
+    let introduced_id = &diff.finding_ids.broken_imports.introduced[0];
+    let resolved_id = &diff.finding_ids.broken_imports.resolved[0];
+    assert!(introduced_id.starts_with("kratos:v1:"));
+    assert_eq!(introduced_id.len(), "kratos:v1:".len() + 64);
+    assert_ne!(introduced_id, resolved_id);
+    assert!(markdown.contains(introduced_id));
+
+    let json = format_diff_json_with_identity(&diff, &before_path, &after_path)
+        .expect("json should format");
     let value: Value = serde_json::from_str(&json).expect("diff json should parse");
+    assert_eq!(
+        value["identityVersion"],
+        Value::from(FINDING_IDENTITY_VERSION)
+    );
     assert_eq!(
         value["before"]["path"],
         Value::from("/tmp/before-report.json")
@@ -287,6 +320,10 @@ fn diff_formatters_render_summary_markdown_and_json() {
     assert_eq!(
         value["findings"]["brokenImports"]["introduced"][0]["file"],
         Value::from("/repo/src/b.ts")
+    );
+    assert_eq!(
+        value["findings"]["brokenImports"]["introduced"][0]["id"],
+        Value::from(introduced_id.clone())
     );
 }
 
@@ -351,9 +388,9 @@ fn diff_formatters_keep_human_markdown_labels_in_korean() {
 
     assert!(summary.contains("라우트 진입점: 새로 발생 1, 해결됨 0, 유지됨 0"));
     assert!(markdown.contains("## 라우트 진입점"));
-    assert!(markdown.contains("- /repo/after/src/use.ts -> `helper` (출처: `./lib`)"));
+    assert!(markdown.contains("/repo/after/src/use.ts -> `helper` (출처: `./lib`)"));
     assert!(markdown.contains(
-        "- /repo/after/src/delete.ts (모듈에 참조가 없고 진입점으로 취급되지 않습니다., 신뢰도 0.66)"
+        "/repo/after/src/delete.ts (모듈에 참조가 없고 진입점으로 취급되지 않습니다., 신뢰도 0.66)"
     ));
 }
 
@@ -381,6 +418,58 @@ fn diff_reports_treats_matching_relative_paths_as_persisted_across_root_changes(
         SummaryCounts::default(),
         finding_set(
             vec![broken_import("/repo/after/src/index.ts", "./shared")],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        vec![],
+    );
+
+    let diff = diff_reports(&before, &after);
+
+    assert_eq!(diff.summary.broken_imports.introduced, 0);
+    assert_eq!(diff.summary.broken_imports.resolved, 0);
+    assert_eq!(diff.summary.broken_imports.persisted, 1);
+
+    let before_id = diff_reports_with_identity(&before, &before)
+        .finding_ids
+        .broken_imports
+        .persisted[0]
+        .clone();
+    let after_id = diff_reports_with_identity(&after, &after)
+        .finding_ids
+        .broken_imports
+        .persisted[0]
+        .clone();
+    assert_eq!(before_id, after_id);
+}
+
+#[test]
+fn diff_reports_normalize_windows_style_roots_when_artifacts_move() {
+    let before = report_v2(
+        r"C:\repo\before",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![broken_import(r"C:\repo\before\src\index.ts", "./shared")],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        vec![],
+    );
+    let after = report_v2(
+        r"D:\checkout\after",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![broken_import(r"D:\checkout\after\src\index.ts", "./shared")],
             vec![],
             vec![],
             vec![],
@@ -449,7 +538,7 @@ fn diff_reports_tracks_duplicate_finding_count_changes() {
 }
 
 #[test]
-fn diff_reports_treat_deletion_candidate_metadata_changes_as_real_changes() {
+fn diff_reports_treat_deletion_candidate_metadata_changes_as_persisted() {
     let before = report_v2(
         "/repo/before",
         None,
@@ -491,22 +580,13 @@ fn diff_reports_treat_deletion_candidate_metadata_changes_as_real_changes() {
         vec![],
     );
 
-    let diff = diff_reports(&before, &after);
+    let diff = diff_reports_with_identity(&before, &after);
 
-    assert_eq!(diff.summary.deletion_candidates.introduced, 1);
-    assert_eq!(diff.summary.deletion_candidates.resolved, 1);
-    assert_eq!(diff.summary.deletion_candidates.persisted, 0);
+    assert_eq!(diff.summary.deletion_candidates.introduced, 0);
+    assert_eq!(diff.summary.deletion_candidates.resolved, 0);
+    assert_eq!(diff.summary.deletion_candidates.persisted, 1);
     assert_eq!(
-        diff.findings.deletion_candidates.resolved,
-        vec![deletion_candidate(
-            "/repo/before/src/delete.ts",
-            "unused",
-            0.55,
-            false,
-        )]
-    );
-    assert_eq!(
-        diff.findings.deletion_candidates.introduced,
+        diff.findings.deletion_candidates.persisted,
         vec![deletion_candidate(
             "/repo/after/src/delete.ts",
             "unused but safer now",
@@ -514,6 +594,112 @@ fn diff_reports_treat_deletion_candidate_metadata_changes_as_real_changes() {
             true,
         )]
     );
+    assert_eq!(diff.finding_ids.deletion_candidates.persisted.len(), 1);
+}
+
+#[test]
+fn diff_reports_keep_orphan_reason_and_confidence_out_of_identity() {
+    let before = report_v2(
+        "/repo/before",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![],
+            vec![orphan_file(
+                "/repo/before/src/orphan.ts",
+                OrphanKind::Module,
+                "Old reason.",
+                0.41,
+            )],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        vec![],
+    );
+    let after_finding = orphan_file(
+        "/repo/after/src/orphan.ts",
+        OrphanKind::Component,
+        "New reason.",
+        0.97,
+    );
+    let after = report_v2(
+        "/repo/after",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![],
+            vec![after_finding.clone()],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+        ),
+        vec![],
+    );
+
+    let diff = diff_reports(&before, &after);
+
+    assert_eq!(diff.summary.orphan_files.introduced, 0);
+    assert_eq!(diff.summary.orphan_files.resolved, 0);
+    assert_eq!(diff.summary.orphan_files.persisted, 1);
+    assert_eq!(diff.findings.orphan_files.persisted, vec![after_finding]);
+}
+
+#[test]
+fn diff_output_is_deterministic_for_reordered_duplicate_findings() {
+    let before = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(vec![], vec![], vec![], vec![], vec![], vec![]),
+        vec![],
+    );
+    let low = deletion_candidate("/repo/src/delete.ts", "A", 0.51, false);
+    let high = deletion_candidate("/repo/src/delete.ts", "B", 0.99, true);
+    let after_forward = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![low.clone(), high.clone()],
+        ),
+        vec![],
+    );
+    let after_reversed = report_v2(
+        "/repo",
+        None,
+        None,
+        SummaryCounts::default(),
+        finding_set(vec![], vec![], vec![], vec![], vec![], vec![high, low]),
+        vec![],
+    );
+    let path = PathBuf::from("/tmp/report.json");
+
+    let forward = format_diff_json_with_identity(
+        &diff_reports_with_identity(&before, &after_forward),
+        &path,
+        &path,
+    )
+    .expect("forward diff should format");
+    let reversed = format_diff_json_with_identity(
+        &diff_reports_with_identity(&before, &after_reversed),
+        &path,
+        &path,
+    )
+    .expect("reversed diff should format");
+
+    assert_eq!(forward, reversed);
 }
 
 #[test]

@@ -85,8 +85,9 @@ npx @jeremyfellaz/kratos diff ./my-app/.kratos/before.json ./my-app/.kratos/afte
 
 - デフォルト形式は `summary` です。
 - `json` は introduced/resolved/persisted finding を machine-readable な形で出力します。
-- `md` はレビューや issue に貼りやすい Markdown diff を出力します。
-- 各入力は report ファイルパスまたはプロジェクト root にできます。
+- `md` はレビューや issue に貼り付けやすい Markdown diff を出力します。
+- JSON/Markdown diff は `identityVersion: 1` と完全な `kratos:v1:<sha256>` finding ID を公開します。ID は finding 種別、正規化された root-relative path、semantic locator のみから計算し、reason、confidence、`safe`、`cleanSafety`、timestamp は除外します。
+- 各入力には report ファイルパスまたは project root を指定できます。
 
 ### `kratos clean [report-path-or-root] [--apply] [--min-confidence value]`
 

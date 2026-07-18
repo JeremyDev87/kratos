@@ -72,6 +72,15 @@ The writer-key contract test uses independent literal expectations for every con
 - `diff --format md` emits Markdown headed by `# Kratos Diff 결과`.
 - `clean` emits a Korean dry-run preview unless `--apply` is supplied.
 
+## Diff finding identity contract
+
+- Diff artifacts expose `identityVersion: 1`; this versions finding identity independently and does not change the report writer's schema version `3`.
+- Every JSON finding has a full lowercase `kratos:v1:<64-hex-sha256>` `id`. Markdown prints the same full ID beside every finding and declares the identity version near the artifact paths.
+- The canonical digest input is length-delimited and contains only the identity version, finding kind, normalized root-relative path, and kind-specific semantic locator. Timestamps, reason copy, confidence, `safe`, `cleanSafety`, and other presentation/evidence metadata are excluded.
+- Kind-specific semantic locators are unresolved import source/kind, export name, imported source/local/imported tuple, and route-entrypoint kind. Orphan files and deletion candidates use their normalized file path without mutable reason/classification/safety metadata.
+- Finding groups and duplicate instances are sorted deterministically before introduced/resolved/persisted output is materialized. Duplicate count changes retain the shared instances and classify only the excess instances as introduced or resolved.
+- The existing `ReportDiff` struct literal and legacy core formatters remain source/output compatible. The CLI uses the additive `ReportDiffWithIdentity` and `*_with_identity` APIs to emit the versioned evidence contract without changing legacy library output implicitly.
+
 ## Clean execution contract
 
 - A report with no deletion candidates is a successful no-op (`0`) before threshold configuration is loaded.
