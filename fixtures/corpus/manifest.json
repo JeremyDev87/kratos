@@ -1,0 +1,76 @@
+{
+  "identityVersion": 1,
+  "cases": [
+    {
+      "id": "dynamic-usage-negative",
+      "root": "cases/dynamic-usage-negative",
+      "class": "dynamic-usage-negative",
+      "expected": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      }
+    },
+    {
+      "id": "empty-noop",
+      "root": "cases/empty-noop",
+      "class": "empty-noop",
+      "expected": {
+        "brokenImports": [],
+        "orphanFiles": [],
+        "deadExports": [],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": []
+      }
+    },
+    {
+      "id": "mixed-positive",
+      "root": "cases/mixed-positive",
+      "class": "mixed-positive",
+      "expected": {
+        "brokenImports": [
+          "kratos:v1:b7ea321b5882d592c3b26f61299f69134170984ffc0116077d7081104efb1446"
+        ],
+        "orphanFiles": [
+          "kratos:v1:c152807b5e9afdbeaf3b48437256ae9b07cee3e8a24aea0ab3a8f20fb0d0af04"
+        ],
+        "deadExports": [
+          "kratos:v1:627ea8f022760eb852dbf466cf51b72af1d56be6c61d2ed7b2f7d3d2ee17bc8c",
+          "kratos:v1:e3c0cd4cac71b1b556b55f854e195b196be60b4725788046e17ea0ecc5522c39"
+        ],
+        "unusedImports": [
+          "kratos:v1:ec991f0f82ff8d782deb5bfce2bb23e7f8a5af9fa0a1d1e93c278cdbec73f938"
+        ],
+        "routeEntrypoints": [
+          "kratos:v1:98acca91a223277a340058ae9fb90aad898b55974421f21028f905a08d9ed3df"
+        ],
+        "deletionCandidates": [
+          "kratos:v1:fd3f23c3b667ca36eda7a0c3b4d2945ea7de38957bea2fdd47cc98d149dc4581"
+        ]
+      }
+    },
+    {
+      "id": "route-substring-negative",
+      "root": "cases/route-substring-negative",
+      "class": "route-substring-negative",
+      "expected": {
+        "brokenImports": [],
+        "orphanFiles": [
+          "kratos:v1:107ac853e5ea951a610ef470984e50459d9eba945156e65991a4d9e03151ef25"
+        ],
+        "deadExports": [
+          "kratos:v1:e9428d2efa485ebdf2cc465cc5498a3ef52c16da35f643bd9d81d6145e4053ae"
+        ],
+        "unusedImports": [],
+        "routeEntrypoints": [],
+        "deletionCandidates": [
+          "kratos:v1:d4f497e1f85d3948e2f63c46b020a5b39e490d8eee85ebb3bf3cd711be91f960"
+        ]
+      }
+    }
+  ]
+}

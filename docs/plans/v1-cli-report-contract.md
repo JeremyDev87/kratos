@@ -81,6 +81,14 @@ The writer-key contract test uses independent literal expectations for every con
 - Finding groups and duplicate instances are sorted deterministically before introduced/resolved/persisted output is materialized. Duplicate count changes retain the shared instances and classify only the excess instances as introduced or resolved.
 - The existing `ReportDiff` struct literal and legacy core formatters remain source/output compatible. The CLI uses the additive `ReportDiffWithIdentity` and `*_with_identity` APIs to emit the versioned evidence contract without changing legacy library output implicitly.
 
+## Corpus calibration contract
+
+- `fixtures/corpus/manifest.json` is the single canonical expected-ID source for the fixed calibration corpus. It pins `identityVersion: 1`, corpus-relative case roots, and sorted full stable IDs for all six finding groups; counts and TP/FP/FN are derived rather than duplicated.
+- The initial corpus contains mixed-positive, dynamic-usage negative, route-substring negative, and empty/no-op cases. The mixed case covers every finding group; dynamic-usage and empty cases remain finding-free, while the route-substring case deliberately stays orphaned and must produce orphan/dead/deletion evidence without a route-entrypoint false positive.
+- Evaluation always runs the real `analyze_project` path and compares its findings with an empty report through `diff_reports_with_identity`. TP is the multiplicity-aware expected/observed intersection, FP is observed-only, and FN is expected-only; duplicate stable IDs remain distinct instances, and any FP or FN fails instead of falling back to a threshold.
+- Case, finding kind, and ID output is deterministically ordered, and the introduced-ID vectors must exactly match the manifest order. Repeated runs and fixture copies under different checkout roots must produce identical ordered vectors and TP/FP/FN results, and evaluation must not create `.kratos/` or modify fixture bytes.
+- This corpus is calibration/test evidence only. It does not add a consumer introduced-only shadow or blocking gate, required CI check, threshold policy, public CLI surface, scanner semantic change, or report schema change.
+
 ## Clean execution contract
 
 - A report with no deletion candidates is a successful no-op (`0`) before threshold configuration is loaded.
